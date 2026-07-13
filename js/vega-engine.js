@@ -17,6 +17,7 @@ const VegaEngine = (() => {
     ngrams3: new Map(),    // "a b c" trigram sayımları
     vocab: new Set(),
     trained: false,
+    missed: [],            // cevaplanamayan sorular — öğrenme kuyruğu
     stats: {
       trainCount: 0,
       lastTrain: null,
@@ -28,6 +29,17 @@ const VegaEngine = (() => {
       lossHistory: []      // son eğitimin epoch → perplexity serisi
     }
   };
+
+  // Genişletme paketleri yüklüyse birleştir
+  function baseKnowledge() {
+    const ext = (typeof VEGA_KNOWLEDGE_EXT !== "undefined") ? VEGA_KNOWLEDGE_EXT : [];
+    return [...VEGA_KNOWLEDGE, ...ext];
+  }
+  function baseCorpus() {
+    const ext = (typeof VEGA_CODE_CORPUS_EXT !== "undefined") ? VEGA_CODE_CORPUS_EXT : [];
+    return [...VEGA_CODE_CORPUS, ...ext];
+  }
+  const SYNONYMS = (typeof VEGA_SYNONYMS !== "undefined") ? VEGA_SYNONYMS : {};
 
   // ---------- Tokenizasyon ----------
   const STOPWORDS = new Set([
@@ -49,8 +61,45 @@ const VegaEngine = (() => {
     return t.length > 6 ? t.slice(0, 6) : t;
   }
 
+  // Tekil kökler + bitişik kelime çiftleri (bigram) — ifade eşleşmesini güçlendirir
   function terms(text) {
-    return tokenize(text).map(stem);
+    const stems = tokenize(text).map(stem);
+    const out = [...stems];
+    for (let i = 0; i < stems.length - 1; i++) {
+      out.push(stems[i] + "_" + stems[i + 1]);
+    }
+    return out;
+  }
+
+  // Levenshtein mesafesi (erken çıkışlı) — yazım hatası toleransı için
+  function editDistance(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      let rowMin = i;
+      for (let j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1,
+                          prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        rowMin = Math.min(rowMin, cur[j]);
+      }
+      if (rowMin > max) return max + 1;   // bu satırda umut kalmadı
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+
+  // Bilinmeyen sorgu terimini indeksteki en yakın terime eşle (mesafe ≤ 2)
+  function fuzzyMatch(term) {
+    if (term.length < 4) return null;
+    let best = null, bestDist = 3;
+    for (const t in state.idf) {
+      if (t.includes("_")) continue;               // bigramları atla
+      if (t[0] !== term[0]) continue;              // hız: ilk harf eşleşsin
+      const d = editDistance(term, t, 2);
+      if (d < bestDist) { bestDist = d; best = t; if (d === 1) break; }
+    }
+    return best;
   }
 
   // ---------- TF-IDF ----------
@@ -85,7 +134,26 @@ const VegaEngine = (() => {
 
   function queryVector(text) {
     const tf = new Map();
+    const raw = tokenize(text);
+
+    // 1) Ham terimler + bigramlar
     terms(text).forEach(t => tf.set(t, (tf.get(t) || 0) + 1));
+
+    // 2) Eşanlamlı genişletme (TR-EN köprüsü) — düşük ağırlıkla ekle
+    raw.forEach(tok => {
+      (SYNONYMS[tok] || []).forEach(syn => {
+        const s = stem(syn.toLocaleLowerCase("tr"));
+        if (!tf.has(s)) tf.set(s, 0.7);
+      });
+    });
+
+    // 3) Yazım hatası toleransı: indekste olmayan terimi en yakınına eşle
+    raw.map(stem).forEach(t => {
+      if (state.idf[t] == null) {
+        const near = fuzzyMatch(t);
+        if (near && !tf.has(near)) tf.set(near, 0.8);
+      }
+    });
     const vec = new Map();
     let norm = 0;
     tf.forEach((count, t) => {
@@ -151,7 +219,7 @@ const VegaEngine = (() => {
   // ---------- Eğitim (gerçek, artımlı, ilerleme raporlu) ----------
   async function train(onProgress) {
     const corpus = [
-      ...VEGA_CODE_CORPUS,
+      ...baseCorpus(),
       ...state.docs.filter(d => d.code).map(d => d.code.replace(/\n/g, " "))
     ];
 
@@ -273,33 +341,61 @@ const VegaEngine = (() => {
     })).sort((a, b) => b.score - a.score);
 
     const best = scored[0];
-    const THRESHOLD = 0.08;
+    const THRESHOLD = 0.11;
 
     if (!best || best.score < THRESHOLD) {
+      logMissed(text);
       const suggestions = scored.slice(0, 3).filter(s => s.score > 0.02)
         .map(s => `• ${s.doc.title}`).join("\n");
       const base = VEGA_UNKNOWN[Math.floor(Math.random() * VEGA_UNKNOWN.length)];
       return {
         type: "unknown",
-        text: base + (suggestions
+        text: base + `\n\nBu soruyu **öğrenme kuyruğuma** kaydettim (Admin > Öğrenme Kuyruğu).` + (suggestions
           ? `\n\nEn yakın bildiğim konular:\n${suggestions}\n\nBana bu konuyu \`öğret: soru => cevap\` biçiminde öğretebilirsin — bir daha unutmam.`
           : `\n\nBana \`öğret: soru => cevap\` yazarak öğretebilirsin.`),
         docId: null
       };
     }
 
-    const related = scored.slice(1, 3).filter(s => s.score > THRESHOLD * 1.5)
+    const related = scored.slice(1, 4).filter(s => s.score > THRESHOLD * 1.5)
       .map(s => s.doc.title);
+
+    // Çoklu kaynak birleştirme: ikinci kayıt en iyiye çok yakınsa cevaba ekle
+    const second = scored[1];
+    let extra = null;
+    if (second && second.score >= best.score * 0.72 && second.score > THRESHOLD &&
+        second.doc.cat === best.doc.cat) {
+      extra = { title: second.doc.title, a: second.doc.a };
+    }
+
+    let answerText = `**${best.doc.title}**\n\n${best.doc.a}`;
+    if (extra) answerText += `\n\n➕ **İlgili: ${extra.title}**\n${extra.a}`;
 
     return {
       type: "answer",
-      text: `**${best.doc.title}**\n\n${best.doc.a}`,
+      text: answerText,
       code: best.doc.code || null,
       docId: best.doc.id,
       confidence: Math.min(0.99, best.score * 2.2),
       category: best.doc.cat,
       related
     };
+  }
+
+  // ---------- Öğrenme kuyruğu: cevaplanamayan sorular ----------
+  function logMissed(text) {
+    const q = text.trim();
+    if (q.length < 3 || state.missed.some(m => m.q === q)) return;
+    state.missed.unshift({ q, t: new Date().toISOString() });
+    if (state.missed.length > 50) state.missed.pop();
+    persist();
+  }
+
+  function getMissed() { return state.missed; }
+
+  function removeMissed(q) {
+    state.missed = state.missed.filter(m => m.q !== q);
+    persist();
   }
 
   // ---------- Çevrimiçi öğrenme ----------
@@ -317,6 +413,9 @@ const VegaEngine = (() => {
     state.docs.push(doc);
     state.stats.taught++;
     buildIndex();   // anında kullanılabilir olsun
+    // Bu soru öğrenme kuyruğundaysa kapat — döngü tamamlandı
+    state.missed = state.missed.filter(m =>
+      cosine(queryVector(m.q), state.vectors[state.docs.length - 1]) < 0.15);
     return doc;
   }
 
@@ -360,13 +459,13 @@ const VegaEngine = (() => {
       const weights = {};
       state.docs.forEach(d => { if (d.weight !== 1.0) weights[d.id] = d.weight; });
       localStorage.setItem(STORE_KEY, JSON.stringify({
-        custom, weights, stats: state.stats
+        custom, weights, stats: state.stats, missed: state.missed
       }));
     } catch (e) { /* depolama dolu — sessizce geç */ }
   }
 
   function load() {
-    state.docs = VEGA_KNOWLEDGE.map(d => ({ ...d, custom: false }));
+    state.docs = baseKnowledge().map(d => ({ ...d, custom: false }));
     try {
       const raw = localStorage.getItem(STORE_KEY);
       if (raw) {
@@ -376,16 +475,18 @@ const VegaEngine = (() => {
           if (saved.weights && saved.weights[d.id] != null) d.weight = saved.weights[d.id];
         });
         if (saved.stats) Object.assign(state.stats, saved.stats);
+        if (saved.missed) state.missed = saved.missed;
       }
     } catch (e) { /* bozuk kayıt — fabrika verisiyle devam */ }
     buildIndex();
-    trainNgrams([...VEGA_CODE_CORPUS,
+    trainNgrams([...baseCorpus(),
                  ...state.docs.filter(d => d.code).map(d => d.code.replace(/\n/g, " "))]);
     state.trained = true;
   }
 
   function factoryReset() {
     localStorage.removeItem(STORE_KEY);
+    state.missed = [];
     state.stats = { trainCount: 0, lastTrain: null, lastPerplexity: null,
                     queries: 0, taught: 0, feedbackUp: 0, feedbackDown: 0, lossHistory: [] };
     load();
@@ -432,7 +533,8 @@ const VegaEngine = (() => {
       customCount: state.docs.filter(d => d.custom).length,
       vocabSize: state.vocab.size,
       trigramCount: state.ngrams3.size,
-      termCount: Object.keys(state.idf).length
+      termCount: Object.keys(state.idf).length,
+      missedCount: state.missed.length
     };
   }
 
@@ -440,5 +542,6 @@ const VegaEngine = (() => {
 
   return { load, ask, train, teach, feedback, addDoc, removeDoc,
            factoryReset, exportModel, importModel, getStats, getDocs,
+           getMissed, removeMissed,
            completeCode, hashString, persist };
 })();

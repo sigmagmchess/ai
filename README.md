@@ -17,7 +17,9 @@ python -m http.server 8000   # http://localhost:8000
 
 | Modül | Açıklama |
 |---|---|
-| 💬 **Sohbet** | 45+ doğrulanmış gerçek programlama bilgisi (JS, Python, algoritmalar, Git, SQL, güvenlik, AI). Güven skoru, ilgili konular, kod örnekleri. |
+| 💬 **Sohbet** | 110+ doğrulanmış gerçek programlama bilgisi (JS, TS, Python, React, Node, CSS, Linux, ağ, algoritmalar, veri yapıları, tasarım desenleri, Git, SQL, güvenlik, ML). Güven skoru, ilgili konular, kod örnekleri, çoklu kaynak birleştirme. |
+| 🔍 **Güçlü arama** | TF-IDF + bigram indeksleme, Türkçe-İngilizce eşanlamlı genişletme (90+ köprü), Levenshtein tabanlı yazım hatası toleransı. |
+| 🎯 **Öğrenme kuyruğu** | Cevaplanamayan sorular otomatik kaydedilir; admin panelinden tek tıkla öğretilir — kapalı öğrenme döngüsü. |
 | 🧠 **Gerçek öğrenme** | `öğret: soru => cevap` ile kalıcı bilgi öğretme; 👍/👎 geri bildirimi kayıt ağırlıklarını ±%15 günceller; localStorage'da kalıcı. |
 | ⌨️ **Kod tamamlama** | `tamamla: const veri =` — kod derlemi üzerinde eğitilmiş trigram dil modelinden ağırlıklı örnekleme. |
 | ⚡ **Eğitim butonu** | Gerçek eğitim: TF-IDF indeksi kurulur, n-gram tabloları sayılır, doğrulama seti üzerinde **gerçek perplexity** ölçülüp grafiğe çizilir. |
@@ -32,9 +34,11 @@ python -m http.server 8000   # http://localhost:8000
 index.html
 ├── css/style.css        # arayüz
 └── js/
-    ├── vega-data.js     # bilgi tabanı (45+ kayıt), wiki, kod derlemi, doğrulama seti
-    ├── vega-engine.js   # TF-IDF + kosinüs arama, trigram LM, perplexity,
-    │                    # çevrimiçi öğrenme, kalıcılık, model export/import
+    ├── vega-data.js     # çekirdek bilgi tabanı, wiki, kod derlemi, doğrulama seti
+    ├── vega-data-ext.js # genişletme paketi: +70 kayıt, +40 kod satırı, eşanlamlı sözlük
+    ├── vega-engine.js   # TF-IDF + bigram + kosinüs arama, eşanlamlı genişletme,
+    │                    # fuzzy eşleme, trigram LM, perplexity, çevrimiçi öğrenme,
+    │                    # öğrenme kuyruğu, kalıcılık, model export/import
     ├── vega-media.js    # üretken görsel (canvas) + algoritmik müzik (Web Audio)
     └── app.js           # UI bağlantıları: sohbet, stüdyolar, wiki, admin
 ```

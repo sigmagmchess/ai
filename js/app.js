@@ -297,7 +297,24 @@ function initWiki() {
 function refreshAdmin() {
   renderStats();
   renderKbList($("#kb-search").value);
+  renderMissed();
   drawLossChart(VegaEngine.getStats().lossHistory);
+}
+
+function renderMissed() {
+  const list = $("#missed-list");
+  const missed = VegaEngine.getMissed();
+  if (!missed.length) {
+    list.innerHTML = `<p class="muted">Kuyruk boş — Vega sorulan her şeyi cevaplayabildi. 🎉</p>`;
+    return;
+  }
+  list.innerHTML = missed.map(m => `
+    <div class="kb-item">
+      <span class="cat">bilinmiyor</span>
+      <span class="title">${escapeHtml(m.q)}</span>
+      <button class="btn missed-teach" data-q="${escapeHtml(m.q)}" style="padding:6px 14px;font-size:12px">Öğret</button>
+      <button class="del missed-del" data-q="${escapeHtml(m.q)}" title="Kuyruktan çıkar">✕</button>
+    </div>`).join("");
 }
 
 function renderStats() {
@@ -310,6 +327,7 @@ function renderStats() {
     [s.vocabSize, "Kod sözlüğü"],
     [s.queries, "Toplam sorgu"],
     [s.feedbackUp + "/" + s.feedbackDown, "👍 / 👎"],
+    [s.missedCount, "Öğrenme kuyruğu"],
     [s.lastPerplexity != null ? s.lastPerplexity : "—", "Son perplexity"]
   ];
   $("#stats-grid").innerHTML = items.map(([v, l]) =>
@@ -484,6 +502,28 @@ function initAdmin() {
       VegaEngine.removeDoc(del.dataset.id);
       refreshAdmin();
       toast("Kayıt silindi");
+    }
+  });
+
+  // --- Öğrenme kuyruğu ---
+  $("#missed-list").addEventListener("click", e => {
+    const teach = e.target.closest(".missed-teach");
+    if (teach) {
+      const q = teach.dataset.q;
+      const cevap = prompt(`"${q}"\n\nVega'ya bu sorunun cevabını öğret:`);
+      if (cevap && cevap.trim()) {
+        VegaEngine.teach(q, cevap.trim());
+        VegaEngine.removeMissed(q);
+        VegaEngine.persist();
+        refreshAdmin();
+        toast("Öğrendim! Bu soru artık cevaplanabilir ✅");
+      }
+      return;
+    }
+    const del = e.target.closest(".missed-del");
+    if (del) {
+      VegaEngine.removeMissed(del.dataset.q);
+      refreshAdmin();
     }
   });
 
