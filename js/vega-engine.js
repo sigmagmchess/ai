@@ -179,13 +179,15 @@ const VegaEngine = (() => {
     return line.split(/\s+/).filter(Boolean);
   }
 
-  function trainNgrams(corpus) {
+  // fixedVocab verilirse sözlük sabit kalır — epoch'lar arası perplexity
+  // karşılaştırılabilir olur (sözlük büyümesi metriği şişirmez)
+  function trainNgrams(corpus, fixedVocab = null) {
     state.ngrams2 = new Map();
     state.ngrams3 = new Map();
-    state.vocab = new Set();
+    state.vocab = fixedVocab || new Set();
     corpus.forEach(line => {
       const ts = ["<s>", "<s>", ...codeTokens(line), "</s>"];
-      ts.forEach(t => state.vocab.add(t));
+      if (!fixedVocab) ts.forEach(t => state.vocab.add(t));
       for (let i = 2; i < ts.length; i++) {
         const bi = ts[i - 1] + " " + ts[i];
         const tri = ts[i - 2] + " " + ts[i - 1] + " " + ts[i];
@@ -225,10 +227,19 @@ const VegaEngine = (() => {
 
     state.stats.lossHistory = [];
     const EPOCHS = 8;
-    // Her epoch derlemin büyüyen bir dilimini işler → perplexity gerçekten düşer
+
+    // Sözlüğü tam derlemden bir kez kur — epoch'lar arası sabit kalsın ki
+    // perplexity düşüşü gerçek öğrenmeyi yansıtsın
+    const fullVocab = new Set();
+    [...corpus, ...VEGA_VALIDATION].forEach(line => {
+      ["<s>", "<s>", ...codeTokens(line), "</s>"].forEach(t => fullVocab.add(t));
+    });
+
+    // Her epoch derlemin büyüyen bir dilimini işler → kapsama arttıkça
+    // doğrulama perplexity'si gerçekten düşer
     for (let e = 1; e <= EPOCHS; e++) {
       const slice = corpus.slice(0, Math.ceil(corpus.length * e / EPOCHS));
-      trainNgrams(slice);
+      trainNgrams(slice, fullVocab);
       const ppl = perplexity(VEGA_VALIDATION);
       state.stats.lossHistory.push({ epoch: e, ppl: Math.round(ppl * 100) / 100 });
       if (onProgress) onProgress(e, EPOCHS, ppl, "n-gram");

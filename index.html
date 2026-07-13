@@ -9,185 +9,237 @@
 </head>
 <body>
 
-<header class="topbar">
+<canvas id="bg-stars" aria-hidden="true"></canvas>
+
+<div class="shell">
+
+<!-- ==================== KENAR ÇUBUĞU ==================== -->
+<aside class="sidebar">
   <div class="brand">
     <div class="logo">V</div>
-    <div>
-      <h1>Vega<span class="badge">7.5B-Code</span></h1>
-      <p class="tagline">Tarayıcıda öğrenen kod ağırlıklı yapay zekâ</p>
+    <div class="brand-text">
+      <h1>Vega</h1>
+      <span class="badge">7.5B-Code</span>
     </div>
   </div>
+
   <nav class="tabs" id="tabs">
-    <button class="tab active" data-tab="chat">💬 Sohbet</button>
-    <button class="tab" data-tab="image">🎨 Görsel</button>
-    <button class="tab" data-tab="music">🎵 Müzik</button>
-    <button class="tab" data-tab="wiki">📚 Wiki</button>
-    <button class="tab" data-tab="admin">⚙️ Admin</button>
+    <button class="tab active" data-tab="chat">
+      <span class="tab-ico">💬</span><span class="tab-label">Sohbet</span>
+    </button>
+    <button class="tab" data-tab="image">
+      <span class="tab-ico">🎨</span><span class="tab-label">Görsel</span>
+    </button>
+    <button class="tab" data-tab="music">
+      <span class="tab-ico">🎵</span><span class="tab-label">Müzik</span>
+    </button>
+    <button class="tab" data-tab="wiki">
+      <span class="tab-ico">📚</span><span class="tab-label">Wiki</span>
+    </button>
+    <button class="tab" data-tab="admin">
+      <span class="tab-ico">⚙️</span><span class="tab-label">Admin</span>
+    </button>
   </nav>
-  <div class="model-status" id="model-status">
-    <span class="dot online"></span><span id="status-text">Model hazır</span>
-  </div>
-</header>
 
-<main>
-
-<!-- ==================== SOHBET ==================== -->
-<section class="panel active" id="panel-chat">
-  <div class="chat-window" id="chat-window">
-    <div class="msg vega">
-      <div class="avatar">V</div>
-      <div class="bubble">
-        <p>Merhaba! Ben <strong>Vega</strong> 🌌 — kod ağırlıklı, gerçekten öğrenen bir yapay zekâyım. Bilgi tabanımda JavaScript, Python, algoritmalar, Git, SQL, güvenlik ve yapay zekâ konularında doğrulanmış gerçek bilgi var.</p>
-        <p>Deneyebileceklerin:</p>
-        <ul>
-          <li><em>"closure nedir?"</em> · <em>"binary search nasıl çalışır?"</em> · <em>"sql injection'dan nasıl korunurum?"</em></li>
-          <li><code>öğret: soru => cevap</code> — bana kalıcı yeni bilgi öğret</li>
-          <li><code>tamamla: const veri =</code> — n-gram modelimle kod tamamlarım</li>
-        </ul>
-        <p>Cevaplarımın altındaki 👍/👎 beni gerçekten eğitir.</p>
+  <div class="side-foot">
+    <div class="model-status" id="model-status">
+      <span class="dot online"></span>
+      <div class="status-lines">
+        <strong id="status-text">Model hazır</strong>
+        <small id="status-sub">yerel · çevrimiçi öğrenme</small>
       </div>
     </div>
+    <p class="side-note">Tüm veriler tarayıcında kalır — hiçbir sunucuya gönderilmez.</p>
   </div>
-  <form class="chat-input" id="chat-form">
-    <input type="text" id="chat-text" placeholder="Vega'ya sor... (ör. event loop nedir?)" autocomplete="off">
-    <button type="submit" class="btn primary">Gönder</button>
-  </form>
-  <div class="quick-chips" id="quick-chips">
-    <button class="chip">closure nedir?</button>
-    <button class="chip">promise ve async await</button>
-    <button class="chip">big o notasyonu</button>
-    <button class="chip">git geri alma</button>
-    <button class="chip">transformer nedir?</button>
-    <button class="chip">tamamla: const sonuc =</button>
-  </div>
-</section>
+</aside>
 
-<!-- ==================== GÖRSEL ==================== -->
-<section class="panel" id="panel-image">
-  <div class="studio-head">
-    <h2>🎨 Görsel Stüdyosu</h2>
-    <p>Betimlemeni yaz — Vega deterministik üretken sanat çizer. Aynı metin daima aynı eseri üretir.</p>
-  </div>
-  <form class="studio-input" id="image-form">
-    <input type="text" id="image-prompt" placeholder="ör. karanlık uzayda mor bir nebula ve yıldızlar" autocomplete="off">
-    <button type="submit" class="btn primary">Üret</button>
-    <button type="button" class="btn" id="image-download" disabled>PNG İndir</button>
-  </form>
-  <div class="quick-chips">
-    <button class="chip img-chip">karanlık uzayda mor nebula</button>
-    <button class="chip img-chip">gece neon şehir silüeti</button>
-    <button class="chip img-chip">soğuk okyanus dalgaları ve ay</button>
-    <button class="chip img-chip">pastel geometrik mozaik desen</button>
-    <button class="chip img-chip">sonbahar ormanında fraktal ağaçlar</button>
-  </div>
-  <div class="canvas-wrap">
-    <canvas id="art-canvas" width="1024" height="640"></canvas>
-    <div class="canvas-meta" id="image-meta"></div>
-  </div>
-</section>
+<!-- ==================== İÇERİK ==================== -->
+<div class="content">
 
-<!-- ==================== MÜZİK ==================== -->
-<section class="panel" id="panel-music">
-  <div class="studio-head">
-    <h2>🎵 Müzik Stüdyosu</h2>
-    <p>Ruh hâlini betimle — Vega gam, tempo ve akor yürüyüşü seçip 16 ölçülük beste yapar. WAV olarak indirebilirsin.</p>
-  </div>
-  <form class="studio-input" id="music-form">
-    <input type="text" id="music-prompt" placeholder="ör. yağmurlu bir gecede hüzünlü piyano" autocomplete="off">
-    <button type="submit" class="btn primary">▶ Bestele &amp; Çal</button>
-    <button type="button" class="btn" id="music-stop" disabled>⏹ Durdur</button>
-    <button type="button" class="btn" id="music-download" disabled>WAV İndir</button>
-  </form>
-  <div class="quick-chips">
-    <button class="chip music-chip">hüzünlü yağmurlu gece</button>
-    <button class="chip music-chip">epik savaş marşı</button>
-    <button class="chip music-chip">neşeli yaz dansı</button>
-    <button class="chip music-chip">sakin lofi meditasyon</button>
-    <button class="chip music-chip">retro synthwave uzay yolculuğu</button>
-  </div>
-  <div class="music-viz" id="music-viz">
-    <div class="music-info" id="music-info">Henüz beste yok — bir betimleme gir.</div>
-    <div class="bars" id="viz-bars"></div>
-  </div>
-</section>
-
-<!-- ==================== WIKI ==================== -->
-<section class="panel" id="panel-wiki">
-  <div class="wiki-layout">
-    <aside class="wiki-nav" id="wiki-nav"></aside>
-    <article class="wiki-body" id="wiki-body"></article>
-  </div>
-</section>
-
-<!-- ==================== ADMIN ==================== -->
-<section class="panel" id="panel-admin">
-  <div class="admin-grid">
-
-    <div class="card wide">
-      <h3>🧠 Model Eğitimi</h3>
-      <p class="muted">Eğitim gerçektir: TF-IDF indeksi yeniden kurulur, n-gram geçiş tabloları sayılır ve model doğrulama cümleleri üzerinde <strong>perplexity</strong> ile ölçülür. Grafikteki düşüş gerçek hesaplamadır.</p>
-      <div class="train-row">
-        <button class="btn primary big" id="train-btn">⚡ Modeli Eğit / Güncelle</button>
-        <div class="train-progress">
-          <div class="progress-bar"><div class="progress-fill" id="train-fill"></div></div>
-          <span id="train-label">Hazır</span>
+<!-- SOHBET -->
+<section class="panel active" id="panel-chat">
+  <div class="chat-shell">
+    <div class="chat-window" id="chat-window">
+      <div class="hero" id="chat-hero">
+        <div class="hero-logo">V</div>
+        <h2>Merhaba, ben Vega 🌌</h2>
+        <p>Kod ağırlıklı, <strong>gerçekten öğrenen</strong> yapay zekâ. 126 doğrulanmış bilgi kaydı, yazım hatası toleransı ve kalıcı hafıza ile.</p>
+        <div class="hero-cards">
+          <button class="hero-card" data-q="closure nedir?">
+            <span>💡</span><b>Soru sor</b><small>"closure nedir?"</small>
+          </button>
+          <button class="hero-card" data-q="öğret: takımımızın adı => Yıldız Takımı">
+            <span>🧠</span><b>Öğret</b><small>öğret: soru =&gt; cevap</small>
+          </button>
+          <button class="hero-card" data-q="tamamla: const veri =">
+            <span>⌨️</span><b>Kod tamamla</b><small>tamamla: const veri =</small>
+          </button>
         </div>
       </div>
-      <canvas id="loss-chart" width="900" height="220"></canvas>
     </div>
 
-    <div class="card">
-      <h3>📊 Model İstatistikleri</h3>
-      <div class="stats-grid" id="stats-grid"></div>
-    </div>
-
-    <div class="card">
-      <h3>💾 Model Dışa/İçe Aktarma</h3>
-      <p class="muted">Öğrenilen bilgiler ve ağırlıklar JSON model dosyası olarak taşınabilir.</p>
-      <div class="btn-row">
-        <button class="btn" id="export-btn">⬇ Modeli Dışa Aktar</button>
-        <label class="btn" for="import-file">⬆ Model İçe Aktar</label>
-        <input type="file" id="import-file" accept=".json" hidden>
-      </div>
-    </div>
-
-    <div class="card wide">
-      <h3>📖 Bilgi Tabanı Yönetimi</h3>
-      <form class="kb-form" id="kb-form">
-        <input type="text" id="kb-title" placeholder="Başlık (ör. Takım standup saati)" required>
-        <input type="text" id="kb-keywords" placeholder="Anahtar kelimeler (arama için)" required>
-        <textarea id="kb-answer" placeholder="Cevap / açıklama" rows="2" required></textarea>
-        <textarea id="kb-code" placeholder="Kod örneği (isteğe bağlı)" rows="2"></textarea>
-        <button type="submit" class="btn primary">+ Kayıt Ekle</button>
+    <div class="composer">
+      <form class="chat-input" id="chat-form">
+        <input type="text" id="chat-text" placeholder="Vega'ya sor…  (ör. event loop nedir?)" autocomplete="off">
+        <button type="submit" class="send-btn" aria-label="Gönder">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
+        </button>
       </form>
-      <div class="kb-toolbar">
-        <input type="text" id="kb-search" placeholder="🔍 Kayıtlarda ara...">
-        <span class="muted" id="kb-count"></span>
+      <div class="quick-chips" id="quick-chips">
+        <button class="chip">promise ve async await</button>
+        <button class="chip">big o notasyonu</button>
+        <button class="chip">flexbox ile ortalama</button>
+        <button class="chip">sql injection korunma</button>
+        <button class="chip">transformer nedir?</button>
       </div>
-      <div class="kb-list" id="kb-list"></div>
     </div>
-
-    <div class="card wide">
-      <h3>🎯 Öğrenme Kuyruğu</h3>
-      <p class="muted">Vega'nın cevaplayamadığı sorular burada birikir — gerçek öğrenme döngüsü: soruya tıkla, cevabını yaz, Vega bir daha unutmasın.</p>
-      <div class="kb-list" id="missed-list"></div>
-    </div>
-
-    <div class="card danger">
-      <h3>⚠️ Tehlikeli Bölge</h3>
-      <p class="muted">Öğrenilen tüm bilgileri, ağırlıkları ve istatistikleri siler; fabrika bilgi tabanına döner.</p>
-      <button class="btn danger-btn" id="reset-btn">Modeli Fabrika Ayarlarına Döndür</button>
-    </div>
-
   </div>
 </section>
 
-</main>
+<!-- GÖRSEL -->
+<section class="panel" id="panel-image">
+  <div class="page">
+    <header class="page-head">
+      <h2>🎨 Görsel Stüdyosu</h2>
+      <p>Betimlemeni yaz — Vega deterministik üretken sanat çizer. Aynı metin daima aynı eseri üretir.</p>
+    </header>
+    <form class="studio-input" id="image-form">
+      <input type="text" id="image-prompt" placeholder="ör. karanlık uzayda mor bir nebula ve yıldızlar" autocomplete="off">
+      <button type="submit" class="btn primary">Üret</button>
+      <button type="button" class="btn ghost" id="image-download" disabled>PNG İndir</button>
+    </form>
+    <div class="quick-chips">
+      <button class="chip img-chip">karanlık uzayda mor nebula</button>
+      <button class="chip img-chip">gece neon şehir silüeti</button>
+      <button class="chip img-chip">soğuk okyanus dalgaları ve ay</button>
+      <button class="chip img-chip">pastel geometrik mozaik desen</button>
+      <button class="chip img-chip">sonbahar ormanında fraktal ağaçlar</button>
+    </div>
+    <div class="canvas-wrap">
+      <canvas id="art-canvas" width="1024" height="640"></canvas>
+      <div class="canvas-meta" id="image-meta"></div>
+    </div>
+  </div>
+</section>
 
-<footer class="footer">
-  Vega-7.5B-Code · Tüm eğitim ve veriler tarayıcınızda kalır, hiçbir sunucuya gönderilmez ·
-  Motor: TF-IDF + n-gram + çevrimiçi öğrenme (detaylar Wiki'de)
-</footer>
+<!-- MÜZİK -->
+<section class="panel" id="panel-music">
+  <div class="page">
+    <header class="page-head">
+      <h2>🎵 Müzik Stüdyosu</h2>
+      <p>Ruh hâlini betimle — Vega gam, tempo ve akor yürüyüşü seçip 16 ölçülük beste yapar. WAV olarak indirebilirsin.</p>
+    </header>
+    <form class="studio-input" id="music-form">
+      <input type="text" id="music-prompt" placeholder="ör. yağmurlu bir gecede hüzünlü piyano" autocomplete="off">
+      <button type="submit" class="btn primary">▶ Bestele &amp; Çal</button>
+      <button type="button" class="btn ghost" id="music-stop" disabled>⏹ Durdur</button>
+      <button type="button" class="btn ghost" id="music-download" disabled>WAV İndir</button>
+    </form>
+    <div class="quick-chips">
+      <button class="chip music-chip">hüzünlü yağmurlu gece</button>
+      <button class="chip music-chip">epik savaş marşı</button>
+      <button class="chip music-chip">neşeli yaz dansı</button>
+      <button class="chip music-chip">sakin lofi meditasyon</button>
+      <button class="chip music-chip">retro synthwave uzay yolculuğu</button>
+    </div>
+    <div class="music-viz card">
+      <div class="music-info" id="music-info">Henüz beste yok — bir betimleme gir ya da yukarıdan hazır bir tarif seç.</div>
+      <div class="bars" id="viz-bars"></div>
+    </div>
+  </div>
+</section>
+
+<!-- WIKI -->
+<section class="panel" id="panel-wiki">
+  <div class="page">
+    <header class="page-head">
+      <h2>📚 Vega Wiki</h2>
+      <p>Platform mimarisi, eğitim süreci ve kullanım kılavuzu.</p>
+    </header>
+    <div class="wiki-layout">
+      <aside class="wiki-nav" id="wiki-nav"></aside>
+      <article class="wiki-body card" id="wiki-body"></article>
+    </div>
+  </div>
+</section>
+
+<!-- ADMIN -->
+<section class="panel" id="panel-admin">
+  <div class="page">
+    <header class="page-head">
+      <h2>⚙️ Yönetim Paneli</h2>
+      <p>Modeli eğit, bilgi tabanını yönet, istatistikleri izle.</p>
+    </header>
+    <div class="admin-grid">
+
+      <div class="card wide">
+        <div class="card-head">
+          <h3>🧠 Model Eğitimi</h3>
+          <button class="btn primary" id="train-btn">⚡ Modeli Eğit / Güncelle</button>
+        </div>
+        <p class="muted">Eğitim gerçektir: TF-IDF indeksi yeniden kurulur, n-gram geçiş tabloları sayılır ve model doğrulama cümleleri üzerinde <strong>perplexity</strong> ile ölçülür. Grafikteki düşüş gerçek hesaplamadır.</p>
+        <div class="train-progress">
+          <div class="progress-bar"><div class="progress-fill" id="train-fill"></div></div>
+          <span id="train-label">Hazır — henüz bu oturumda eğitim çalıştırılmadı</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="loss-chart" width="920" height="240"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>📊 Model İstatistikleri</h3>
+        <div class="stats-grid" id="stats-grid"></div>
+      </div>
+
+      <div class="card">
+        <h3>💾 Model Dosyası</h3>
+        <p class="muted">Öğrenilen bilgiler ve ağırlıklar JSON model dosyası olarak taşınabilir — başka tarayıcıya aktar, yedeğini al.</p>
+        <div class="btn-row">
+          <button class="btn ghost" id="export-btn">⬇ Dışa Aktar</button>
+          <label class="btn ghost" for="import-file">⬆ İçe Aktar</label>
+          <input type="file" id="import-file" accept=".json" hidden>
+        </div>
+      </div>
+
+      <div class="card wide">
+        <div class="card-head">
+          <h3>📖 Bilgi Tabanı</h3>
+          <span class="muted" id="kb-count"></span>
+        </div>
+        <form class="kb-form" id="kb-form">
+          <input type="text" id="kb-title" placeholder="Başlık (ör. Takım standup saati)" required>
+          <input type="text" id="kb-keywords" placeholder="Anahtar kelimeler (arama için)" required>
+          <textarea id="kb-answer" placeholder="Cevap / açıklama" rows="2" required></textarea>
+          <textarea id="kb-code" placeholder="Kod örneği (isteğe bağlı)" rows="2"></textarea>
+          <button type="submit" class="btn primary">+ Kayıt Ekle</button>
+        </form>
+        <input type="text" id="kb-search" class="kb-search" placeholder="🔍 Kayıtlarda ara…">
+        <div class="kb-list" id="kb-list"></div>
+      </div>
+
+      <div class="card wide">
+        <h3>🎯 Öğrenme Kuyruğu</h3>
+        <p class="muted">Vega'nın cevaplayamadığı sorular burada birikir — gerçek öğrenme döngüsü: "Öğret"e tıkla, cevabını yaz, Vega bir daha unutmasın.</p>
+        <div class="kb-list" id="missed-list"></div>
+      </div>
+
+      <div class="card danger wide">
+        <div class="card-head">
+          <div>
+            <h3>⚠️ Tehlikeli Bölge</h3>
+            <p class="muted" style="margin:6px 0 0">Öğrenilen tüm bilgileri, ağırlıkları ve istatistikleri siler; fabrika bilgi tabanına döner.</p>
+          </div>
+          <button class="danger-btn" id="reset-btn">Fabrika Ayarlarına Döndür</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+</div><!-- /content -->
+</div><!-- /shell -->
 
 <script src="js/vega-data.js"></script>
 <script src="js/vega-data-ext.js"></script>
