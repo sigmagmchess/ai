@@ -20,10 +20,34 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /* ==================== NÖRAL ÇEKİRDEK (gerçek ML) ==================== */
+// Kelime ağının eğitim metinleri: küratörlü kayıtlar + wiki + referans
+// kayıtlarından geniş örneklem (Türkçe şablon cümleler dilbilgisi öğretir)
+function wordTrainingTexts() {
+  const curated = VegaEngine.getDocs()
+    .filter(d => !d.id.startsWith("ref-"))
+    .map(d => d.title + ". " + d.a);
+  if (typeof VEGA_WIKI !== "undefined") {
+    VEGA_WIKI.forEach(w => curated.push(w.body.replace(/[*`#>]/g, " ")));
+  }
+  // Denge: küratörlü Türkçe 3x tekrarlanır (zengin dilbilgisi), referans
+  // şablonları sınırlı örneklenir — şablonlar küratörlü dili ezmesin
+  const texts = [...curated, ...curated, ...curated];
+  const refs = VegaEngine.getDocs().filter(d => d.id.startsWith("ref-"));
+  for (let i = 0; i < refs.length && texts.length < curated.length * 3 + 1200; i += 12) {
+    texts.push(refs[i].title + ". " +
+      refs[i].a.replace(/Dokümantasyon: \S+/g, ""));
+  }
+  return texts;
+}
+
 function initNeural() {
   // Kaydedilmiş sinir ağları varsa yükle
   const hadCode = VegaML.loadCodeNet();
   const hadWord = VegaML.loadWordNet();
+  if (hadWord) {
+    // Harman istatistikleri ağırlıklarla saklanmaz — hızlıca yeniden sayılır
+    VegaML.buildWordStats(wordTrainingTexts());
+  }
   if (hadCode || hadWord) {
     $("#nn-label").textContent =
       `Kaydedilmiş ağırlıklar yüklendi (${[hadCode && "kod ağı", hadWord && "kelime ağı"]
@@ -78,13 +102,7 @@ function initNeural() {
     const btn = $("#nnw-train-btn");
     btn.disabled = true;
     setStatus("Kelime ağı eğitiliyor…", true);
-    // Eğitim verisi: bilgi tabanının Türkçe metinleri + wiki sayfaları
-    const texts = VegaEngine.getDocs()
-      .filter(d => !d.id.startsWith("ref-"))
-      .map(d => d.title + ". " + d.a);
-    if (typeof VEGA_WIKI !== "undefined") {
-      VEGA_WIKI.forEach(w => texts.push(w.body.replace(/[*`#>]/g, " ")));
-    }
+    const texts = wordTrainingTexts();
     const t0 = performance.now();
     await VegaML.trainWordNet(texts, {
       steps: 500,

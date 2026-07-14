@@ -12,7 +12,7 @@ Vega; kod ağırlıklı, **gerçekten öğrenen**, tamamen tarayıcıda çalış
 |---|---|---|---|
 | **IntentNet** | bag-of-words(900) → ReLU(48) → softmax(7) · ~37k parametre | Sorunun kategori ailesini öngörür; tahmin **cevap seçimini gerçekten etkiler** (eşleşen aile skor desteği alır). Sayfa açılışında arka planda ~1 sn'de eğitilir. | doğrulama doğruluğu **%93** |
 | **CodeNet** | karakter embedding(20) × bağlam(14) → ReLU(96) → softmax(96) · ~38k parametre | Açık kaynak kod derleminden karakter karakter üretmeyi öğrenir; `üret: function ` komutuyla örnekler. Admin'den ~10 sn'de eğitilir, ağırlıklar localStorage'a kaydedilir. | doğrulama kaybı 3.79 → **2.28** |
-| **WordNet** | kelime embedding(24) × bağlam(6) → ReLU(64) → softmax(800) · ~80k parametre | Bilgi tabanının Türkçe metinlerinden **kelime kelime** üretmeyi öğrenir — sözlüğü gerçek kelimelerden oluşur, ürettiği her token gerçek bir Türkçe kelimedir. `kelime: yapay zeka` komutuyla örnekler. Erken durdurma (en iyi doğrulama anının ağırlıklarına dönüş) ve tekrar cezası uygular. | ~8 sn eğitim, erken durdurmalı |
+| **WordNet** | kelime embedding(24) × bağlam(6) → ReLU(72) → softmax(1000) · ~107k parametre | Bilgi tabanının Türkçe metinlerinden (dengeli karışım: küratörlü ×3 + referans şablonları) **kelime kelime** üretmeyi öğrenir; ürettiği her token gerçek bir Türkçe kelimedir. Üretimde **nöral + kelime-trigram harmanı** (λ=0.5), **nucleus top-p=0.92 örnekleme**, tekrar cezası ve erken durdurma kullanır — tam gramatik cümle kalıpları üretir. `kelime: yapay zeka` komutu. | doğrulama kaybı 5.38 → **3.63** |
 
 ## Çalıştırma
 

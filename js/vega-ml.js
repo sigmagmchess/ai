@@ -423,7 +423,7 @@ const VegaML = (() => {
      kelimedir, dizilimini (hangi kelimeden sonra ne gelir) ağ
      kendisi öğrenir. Mimari CodeNet ile aynı: embedding + MLP.
      ============================================================ */
-  const WCTX = 6, WEMB = 24, WHID = 64, WVOCAB = 800;
+  const WCTX = 6, WEMB = 24, WHID = 72, WVOCAB = 1000;
   const wordnet = {
     ready: false, words: null, wordIdx: null,
     emb: null, net: null, history: [], trainedWords: 0
@@ -436,8 +436,33 @@ const VegaML = (() => {
       .split(/\s+/).filter(Boolean);
   }
 
+  // Kelime istatistikleri: trigram/bigram sayımları. Üretimde nöral
+  // dağılımla HARMANLANIR — istatistik yerel akıcılığı, ağ genellemeyi
+  // sağlar (Bengio 2003 nöral dil modelinin klasik reçetesi).
+  const wordstats = { tri: new Map(), bi: new Map(), ready: false };
+
+  function buildWordStats(texts) {
+    wordstats.tri = new Map();
+    wordstats.bi = new Map();
+    const stream = [];
+    texts.forEach(t => { stream.push(...wordTokens(t), "."); });
+    for (let i = 2; i < stream.length; i++) {
+      const w1 = stream[i - 2], w2 = stream[i - 1], w3 = stream[i];
+      const tk = w1 + " " + w2;
+      let tm = wordstats.tri.get(tk);
+      if (!tm) { tm = { total: 0, m: new Map() }; wordstats.tri.set(tk, tm); }
+      tm.m.set(w3, (tm.m.get(w3) || 0) + 1); tm.total++;
+      let bm = wordstats.bi.get(w2);
+      if (!bm) { bm = { total: 0, m: new Map() }; wordstats.bi.set(w2, bm); }
+      bm.m.set(w3, (bm.m.get(w3) || 0) + 1); bm.total++;
+    }
+    wordstats.ready = true;
+    return stream.length;
+  }
+
   async function trainWordNet(texts, opts = {}) {
-    const { steps = 550, batch = 32, lr = 0.006, onProgress } = opts;
+    const { steps = 700, batch = 32, lr = 0.006, onProgress } = opts;
+    buildWordStats(texts);   // üretimde harmanlanacak istatistikler
     const stream = [];
     texts.forEach(t => { stream.push(...wordTokens(t), "."); });
 
@@ -566,20 +591,46 @@ const VegaML = (() => {
     const recent = [];             // tekrar cezası penceresi
     let sentences = 0;
     for (let i = 0; i < maxWords; i++) {
+      // 1) Nöral dağılım
       const X = zeros(WCTX * WEMB);
       for (let c = 0; c < WCTX; c++)
         X.set(emb.subarray(ctx[c] * WEMB, ctx[c] * WEMB + WEMB), c * WEMB);
       const P = net.forward(X, 1, null);
-      const logits = new Float64Array(V);
-      let sum = 0;
+
+      // 2) İstatistiksel dağılım: trigram varsa güçlü, yoksa bigram
+      const l1 = out[out.length - 2] || ".", l2 = out[out.length - 1] || ".";
+      const tri = wordstats.ready ? wordstats.tri.get(l1 + " " + l2) : null;
+      const bi = wordstats.ready ? wordstats.bi.get(l2) : null;
+      const stat = tri || bi;
+      const lambda = tri ? 0.5 : (bi ? 0.35 : 0);   // harman ağırlığı
+
+      // 3) Harmanla + sıcaklık + tekrar cezası
+      const mixed = new Float64Array(V);
       for (let v = 1; v < V; v++) {   // 0 (UNK) asla örneklenmez
-        let l = Math.pow(Math.max(1e-9, P[v]), 1 / temperature);
-        if (recent.includes(v)) l *= 0.12;   // tekrar cezası: "vs vs" önlenir
-        logits[v] = l;
-        sum += l;
+        let p = (1 - lambda) * P[v];
+        if (stat) p += lambda * ((stat.m.get(words[v]) || 0) / stat.total);
+        let l = Math.pow(Math.max(1e-9, p), 1 / temperature);
+        if (recent.includes(v)) l *= 0.12;
+        mixed[v] = l;
       }
-      let r = rand() * sum, pick = 1;
-      for (let v = 1; v < V; v++) { r -= logits[v]; if (r <= 0) { pick = v; break; } }
+
+      // 4) Nucleus (top-p) örnekleme: kümülatif %92'lik çekirdekten seç —
+      //    dağılımın saçma uzun kuyruğu kesilir
+      const order = [];
+      for (let v = 1; v < V; v++) if (mixed[v] > 0) order.push(v);
+      order.sort((a, b) => mixed[b] - mixed[a]);
+      let total = 0;
+      for (const v of order) total += mixed[v];
+      const nucleus = [];
+      let cum = 0;
+      for (const v of order) {
+        nucleus.push(v);
+        cum += mixed[v];
+        if (cum / total >= 0.92) break;
+      }
+      let r = rand() * cum, pick = nucleus[0];
+      for (const v of nucleus) { r -= mixed[v]; if (r <= 0) { pick = v; break; } }
+
       const w = words[pick];
       out.push(w);
       recent.push(pick);
@@ -715,7 +766,8 @@ const VegaML = (() => {
   }
 
   return { trainIntent, predictIntent, trainCodeNet, generate,
-           trainWordNet, generateWords, saveWordNet, loadWordNet, clearWordNet,
+           trainWordNet, generateWords, buildWordStats,
+           saveWordNet, loadWordNet, clearWordNet,
            saveCodeNet, loadCodeNet, clearCodeNet, info,
            _mlp: createMLP };   // testler için
 })();
