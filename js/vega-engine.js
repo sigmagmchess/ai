@@ -342,7 +342,7 @@ const VegaEngine = (() => {
       };
     }
 
-    // Kod tamamlama komutu
+    // Kod tamamlama komutu (n-gram istatistiksel model)
     const codeMatch = text.match(/^(tamamla|kod)\s*:\s*(.+)$/is);
     if (codeMatch) {
       const seed = hashString(codeMatch[2]);
@@ -355,16 +355,58 @@ const VegaEngine = (() => {
       };
     }
 
+    // Nöral üretim komutu (karakter düzeyi sinir ağı)
+    const neuralMatch = text.match(/^(üret|nöral)\s*:\s*(.+)$/is);
+    if (neuralMatch) {
+      const ml = (typeof VegaML !== "undefined") ? VegaML : null;
+      if (!ml || !ml.info().codeReady) {
+        return {
+          type: "info",
+          text: "Nöral dil modelim henüz eğitilmedi. **Admin > Nöral Çekirdek** bölümünden \"Sinir Ağını Eğit\" butonuna bas — gerçek geri yayılımla tarayıcında eğitilir (~10 sn), sonra bu komut çalışır.",
+          docId: null
+        };
+      }
+      const prefix = neuralMatch[2];
+      const gen = ml.generate(prefix, 140, 0.75, hashString(prefix));
+      return {
+        type: "code",
+        text: "Karakter düzeyi **sinir ağım** üretti (gerçek eğitilmiş ağırlıklar, sıcaklık örneklemesi). Küçük bir ağ olduğu için kusurlu ama her karakteri kendi öğrendi:",
+        code: gen,
+        docId: null
+      };
+    }
+
     // Selamlama / kimlik
     const st = detectSmalltalk(text);
     if (st) return { type: "smalltalk", text: st, docId: null };
 
-    // Anlamsal arama
+    // Nöral niyet tahmini: MLP sınıflandırıcı sorunun kategori ailesini
+    // öngörür; eşleşen ailedeki kayıtların skoru güvenle orantılı artar
+    let intent = null;
+    if (typeof VegaML !== "undefined" && VegaML.info().intentReady) {
+      intent = VegaML.predictIntent(text);
+    }
+    const famCache = new Map();
+    function famOf(cat) {
+      if (!famCache.has(cat)) {
+        let f = null;
+        for (const [name, cats] of VEGA_FAMILIES) {
+          if (cats.includes(cat)) { f = name; break; }
+        }
+        famCache.set(cat, f);
+      }
+      return famCache.get(cat);
+    }
+
+    // Anlamsal arama (+ nöral niyet desteği)
     const qv = queryVector(text);
-    const scored = state.docs.map((d, i) => ({
-      doc: d,
-      score: cosine(qv, state.vectors[i]) * d.weight
-    })).sort((a, b) => b.score - a.score);
+    const scored = state.docs.map((d, i) => {
+      let s = cosine(qv, state.vectors[i]) * d.weight;
+      if (intent && intent.conf > 0.4 && famOf(d.cat) === intent.label) {
+        s *= 1 + 0.3 * intent.conf;
+      }
+      return { doc: d, score: s };
+    }).sort((a, b) => b.score - a.score);
 
     const best = scored[0];
     const THRESHOLD = 0.11;
@@ -405,6 +447,7 @@ const VegaEngine = (() => {
       docId: best.doc.id,
       confidence: Math.min(0.99, best.score * 2.2),
       category: best.doc.cat,
+      intent: intent ? { label: intent.label, conf: intent.conf } : null,
       related
     };
   }

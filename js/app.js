@@ -16,7 +16,140 @@ document.addEventListener("DOMContentLoaded", () => {
   initMusicStudio();
   initWiki();
   initAdmin();
+  initNeural();
 });
+
+/* ==================== NÖRAL ÇEKİRDEK (gerçek ML) ==================== */
+function initNeural() {
+  // Kaydedilmiş sinir ağı varsa yükle
+  if (VegaML.loadCodeNet()) {
+    $("#nn-label").textContent =
+      "Kaydedilmiş sinir ağı ağırlıkları yüklendi — sohbette \"üret: function \" hazır. Yeniden eğitmek istersen butona bas.";
+    $("#nn-fill").style.width = "100%";
+  }
+
+  // Niyet sınıflandırıcısını arka planda eğit — gerçek gradyan inişi,
+  // bilgi tabanındaki (anahtar kelime → kategori) çiftleri üzerinde
+  $("#status-sub").textContent = "niyet ağı eğitiliyor…";
+  setTimeout(async () => {
+    const acc = await VegaML.trainIntent(VegaEngine.getDocs());
+    $("#status-sub").textContent =
+      `niyet ağı hazır · doğrulama %${Math.round(acc * 100)}`;
+    renderNeuralCard();
+  }, 350);
+
+  renderNeuralCard();
+
+  $("#nn-train-btn").addEventListener("click", async () => {
+    const btn = $("#nn-train-btn");
+    btn.disabled = true;
+    setStatus("Sinir ağı eğitiliyor…", true);
+    const corpus = [];
+    // gerçek OSS derleminden örneklem — karakter modeli bununla eğitilir
+    if (typeof VEGA_BIG_CORPUS !== "undefined") {
+      const step = Math.max(1, Math.floor(VEGA_BIG_CORPUS.length / 2500));
+      for (let i = 0; i < VEGA_BIG_CORPUS.length && corpus.length < 2500; i += step)
+        corpus.push(VEGA_BIG_CORPUS[i]);
+    }
+    const t0 = performance.now();
+    await VegaML.trainCodeNet(corpus, {
+      steps: 700,
+      onProgress: (s, total, loss, val) => {
+        $("#nn-label").textContent =
+          `Adım ${s}/${total} · eğitim kaybı ${loss.toFixed(3)} · doğrulama ${val.toFixed(3)}`;
+        $("#nn-fill").style.width = Math.round(s / total * 100) + "%";
+        drawNeuralChart();
+      }
+    });
+    const sec = ((performance.now() - t0) / 1000).toFixed(1);
+    const saved = VegaML.saveCodeNet();
+    $("#nn-label").textContent =
+      `Eğitim bitti (${sec} sn) · ${saved ? "ağırlıklar tarayıcıya kaydedildi" : "kaydetme başarısız (kota)"} · sohbette "üret: function " dene`;
+    setStatus("Model hazır", false);
+    btn.disabled = false;
+    renderNeuralCard();
+    toast("Sinir ağı eğitildi 🧬");
+  });
+
+  $("#nn-sample-btn").addEventListener("click", () => {
+    const info = VegaML.info();
+    if (!info.codeReady) { toast("Önce sinir ağını eğit"); return; }
+    const out = VegaML.generate("function ", 130, 0.75, Date.now() % 100000);
+    $("#nn-sample").textContent = out;
+    $("#nn-sample").parentElement.hidden = false;
+  });
+
+  $("#nn-clear-btn").addEventListener("click", () => {
+    VegaML.clearCodeNet();
+    renderNeuralCard();
+    toast("Sinir ağı ağırlıkları silindi");
+  });
+}
+
+function renderNeuralCard() {
+  const i = VegaML.info();
+  $("#nn-stats").innerHTML = `
+    <div class="stat"><div class="val">${i.intentReady ? "%" + Math.round(i.intentAcc * 100) : "—"}</div>
+      <div class="lbl">Niyet ağı doğruluğu (val)</div></div>
+    <div class="stat"><div class="val">${i.intentParams.toLocaleString("tr-TR")}</div>
+      <div class="lbl">Niyet ağı parametresi</div></div>
+    <div class="stat"><div class="val">${i.codeReady ? i.codeParams.toLocaleString("tr-TR") : "—"}</div>
+      <div class="lbl">Karakter ağı parametresi</div></div>
+    <div class="stat"><div class="val">${i.codeReady ? (i.codeTrainedChars / 1000).toFixed(0) + "k" : "—"}</div>
+      <div class="lbl">Eğitim karakteri</div></div>`;
+  drawNeuralChart();
+}
+
+function drawNeuralChart() {
+  const canvas = $("#nn-chart");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  const hist = VegaML.info().codeHistory;
+  const INK_MUTED = "#8a92b2", GRID = "rgba(138,146,178,0.14)";
+
+  if (!hist || hist.length < 2) {
+    ctx.fillStyle = INK_MUTED;
+    ctx.font = "12px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("Henüz nöral eğitim yok — kayıp eğrileri burada çizilir.", W / 2, H / 2);
+    ctx.textAlign = "left";
+    return;
+  }
+
+  const padL = 44, padR = 14, padT = 26, padB = 24;
+  const all = hist.flatMap(h => [h.loss, h.val]);
+  const maxV = Math.max(...all) * 1.05, minV = Math.min(...all) * 0.95;
+  const x = i => padL + (W - padL - padR) * (i / (hist.length - 1));
+  const y = v => H - padB - (H - padT - padB) * ((v - minV) / Math.max(1e-6, maxV - minV));
+
+  ctx.font = "10.5px system-ui";
+  for (let g = 0; g <= 3; g++) {
+    const v = minV + (maxV - minV) * g / 3;
+    ctx.strokeStyle = GRID;
+    ctx.beginPath(); ctx.moveTo(padL, y(v)); ctx.lineTo(W - padR, y(v)); ctx.stroke();
+    ctx.fillStyle = INK_MUTED;
+    ctx.textAlign = "right";
+    ctx.fillText(v.toFixed(2), padL - 8, y(v) + 4);
+  }
+  ctx.textAlign = "left";
+
+  // iki seri: eğitim (mor) + doğrulama (camgöbeği) — lejant üstte
+  const SERIES = [["loss", "#8b7cff", "eğitim"], ["val", "#22d3ee", "doğrulama"]];
+  SERIES.forEach(([key, color, label], si) => {
+    ctx.beginPath();
+    hist.forEach((h, i) => i === 0 ? ctx.moveTo(x(i), y(h[key])) : ctx.lineTo(x(i), y(h[key])));
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // lejant
+    ctx.fillStyle = color;
+    ctx.fillRect(padL + si * 110, 8, 14, 3);
+    ctx.fillStyle = INK_MUTED;
+    ctx.fillText(label + " kaybı", padL + si * 110 + 20, 13);
+  });
+}
 
 /* ==================== YILDIZ ARKA PLANI ==================== */
 function initStars() {
@@ -178,8 +311,11 @@ function initChat() {
       let meta = "";
       if (res.type === "answer") {
         const pct = Math.round(res.confidence * 100);
+        const intentChip = res.intent
+          ? `<span class="confidence">🧠 nöral niyet: ${escapeHtml(res.intent.label)} %${Math.round(res.intent.conf * 100)}</span>`
+          : "";
         meta = `<div class="meta-row">
-          <span class="confidence">📁 ${escapeHtml(res.category)} · güven %${pct}</span>
+          <span class="confidence">📁 ${escapeHtml(res.category)} · güven %${pct}</span>${intentChip}
           <button class="fb-btn" data-doc="${res.docId}" data-fb="1" title="İyi cevap — ağırlığı artır">👍</button>
           <button class="fb-btn" data-doc="${res.docId}" data-fb="0" title="Kötü cevap — ağırlığı azalt">👎</button>
         </div>`;
@@ -356,19 +492,10 @@ function initMusicStudio() {
 }
 
 /* ==================== BİLGİ AĞI ==================== */
-// Kategori aileleri: sabit sırada renk ataması (dataviz kuralı — döngüsel değil)
-const GRAPH_FAMILIES = [
-  ["Diller",        ["JavaScript", "TypeScript", "Python"],                       "#8b7cff"],
-  ["Frontend",      ["React", "CSS", "HTML", "Web"],                              "#22d3ee"],
-  ["Backend",       ["Node.js", "Backend", "Veritabanı", "Ağ", "DevOps", "Linux"],"#34d399"],
-  ["Algoritma",     ["Algoritmalar", "Veri Yapıları", "Kavramlar"],               "#fbbf24"],
-  ["Yapay Zekâ",    ["Yapay Zeka"],                                               "#f472b6"],
-  ["Güvenlik",      ["Güvenlik"],                                                 "#fb7185"],
-  ["Araçlar",       ["Git", "Araçlar", "Tasarım"],                                "#60a5fa"],
-  ["Öğretilen",     ["Öğretilen"],                                                "#a3e635"]
-];
+// Kategori aileleri VEGA_FAMILIES'ten gelir (vega-data.js) — nöral niyet
+// sınıflandırıcısıyla aynı etiket kümesi, sabit renk sırası
 function familyOf(cat) {
-  for (const [name, cats, color] of GRAPH_FAMILIES) {
+  for (const [name, cats, color] of VEGA_FAMILIES) {
     if (cats.includes(cat)) return { name, color };
   }
   return { name: "Diğer", color: "#8a92b2" };

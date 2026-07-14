@@ -77,6 +77,9 @@
           <button class="hero-card" data-q="tamamla: const veri =">
             <span>⌨️</span><b>Kod tamamla</b><small>tamamla: const veri =</small>
           </button>
+          <button class="hero-card" data-q="üret: function ">
+            <span>🧬</span><b>Nöral üretim</b><small>üret: function </small>
+          </button>
         </div>
       </div>
     </div>
@@ -205,6 +208,30 @@
         </div>
       </div>
 
+      <div class="card wide">
+        <div class="card-head">
+          <h3>🧬 Nöral Çekirdek — gerçek makine öğrenmesi</h3>
+          <div class="btn-row">
+            <button class="btn primary" id="nn-train-btn">🧠 Sinir Ağını Eğit</button>
+            <button class="btn ghost" id="nn-sample-btn">Örnek Üret</button>
+            <button class="btn ghost" id="nn-clear-btn">Ağırlıkları Sil</button>
+          </div>
+        </div>
+        <p class="muted">İki gerçek sinir ağı, tarayıcında <strong>gerçek geri yayılım + Adam optimizer</strong> ile eğitilir — kütüphane yok, her gradyan elle hesaplanır. <strong>Niyet ağı</strong> (bag-of-words MLP) sorunun kategorisini öngörür ve cevap seçimini etkiler; <strong>karakter ağı</strong> (embedding + MLP) açık kaynak kod derleminden karakter karakter üretmeyi öğrenir. Sohbette <code>üret: function </code> yaz.</p>
+        <div class="train-progress">
+          <div class="progress-bar"><div class="progress-fill" id="nn-fill"></div></div>
+          <span id="nn-label">Karakter ağı henüz eğitilmedi — "Sinir Ağını Eğit" (~10 sn, canlı kayıp eğrisiyle)</span>
+        </div>
+        <div class="stats-grid nn-grid" id="nn-stats"></div>
+        <div class="chart-wrap" style="margin-top:14px">
+          <canvas id="nn-chart" width="920" height="190"></canvas>
+        </div>
+        <div class="codebox" style="margin-top:14px" hidden>
+          <div class="codebox-head"><span>sinir ağı çıktısı</span></div>
+          <pre id="nn-sample"></pre>
+        </div>
+      </div>
+
       <div class="card">
         <h3>📊 Model İstatistikleri</h3>
         <div class="stats-grid" id="stats-grid"></div>
@@ -263,6 +290,7 @@
 <script src="js/vega-data-ext.js"></script>
 <script src="js/vega-data-ref.js"></script>
 <script src="js/vega-corpus-big.js"></script>
+<script src="js/vega-ml.js"></script>
 <script src="js/vega-engine.js"></script>
 <script src="js/vega-media.js"></script>
 <script src="js/app.js"></script>

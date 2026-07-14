@@ -2,7 +2,16 @@
 
 Vega; kod ağırlıklı, **gerçekten öğrenen**, tamamen tarayıcıda çalışan bir yapay zekâ platformudur. Sunucu yok, API anahtarı yok, dışa veri gönderimi yok — `index.html`'i açmanız yeterli.
 
-> **Dürüstlük notu:** "7.5B-Code" ürün adıdır. Gerçek bir 7,5 milyar parametreli model tarayıcıda eğitilemez; Vega'nın motoru dürüst bir hibrittir: TF-IDF anlamsal arama + n-gram dil modeli + çevrimiçi öğrenme. Küçüktür ama öğrenmesi sahicidir.
+> **Dürüstlük notu:** "7.5B-Code" ürün adıdır. Gerçek bir 7,5 milyar parametreli model tarayıcıda eğitilemez; Vega'nın motoru dürüst bir hibrittir: **gerçek sinir ağları** (saf JS geri yayılım + Adam, ~75 bin parametre) + TF-IDF anlamsal arama + n-gram dil modeli + çevrimiçi öğrenme. Küçüktür ama öğrenmesi ve gradyanları sahicidir.
+
+## 🧬 Nöral Çekirdek — gerçek makine öğrenmesi
+
+`js/vega-ml.js` hiçbir kütüphane kullanmadan gerçek ML uygular: ileri geçiş, **elle türetilmiş geri yayılım**, softmax çapraz entropi, **Adam optimizer**, mini-batch eğitim, eğitim/doğrulama ayrımı. (Geri yayılımın doğruluğu XOR problemiyle test edilir: kayıp 0.654 → 0.0001.)
+
+| Model | Mimari | Görev | Ölçülen |
+|---|---|---|---|
+| **IntentNet** | bag-of-words(900) → ReLU(48) → softmax(7) · ~37k parametre | Sorunun kategori ailesini öngörür; tahmin **cevap seçimini gerçekten etkiler** (eşleşen aile skor desteği alır). Sayfa açılışında arka planda ~1 sn'de eğitilir. | doğrulama doğruluğu **%93** |
+| **CodeNet** | karakter embedding(20) × bağlam(14) → ReLU(96) → softmax(96) · ~38k parametre | Açık kaynak kod derleminden karakter karakter üretmeyi öğrenir; `üret: function ` komutuyla örnekler. Admin'den ~10 sn'de eğitilir, ağırlıklar localStorage'a kaydedilir. | doğrulama kaybı 3.79 → **2.28** |
 
 ## Çalıştırma
 

@@ -619,6 +619,8 @@ body {
 #loss-chart { width: 100%; height: auto; display: block; }
 
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.nn-grid { grid-template-columns: repeat(4, 1fr); margin-top: 4px; }
+@media (max-width: 900px) { .nn-grid { grid-template-columns: 1fr 1fr; } }
 .stat {
   background: rgba(11, 14, 26, 0.55);
   border: 1px solid var(--border);

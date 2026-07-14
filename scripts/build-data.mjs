@@ -296,6 +296,68 @@ for (const [name, tree] of Object.entries(bcd.css.types || {})) {
   });
 }
 
+/* --- SVG eleman öznitelikleri, MathML, JS derinlik-3, at-kural yönergeleri --- */
+for (const [elem, tree] of Object.entries(bcd.svg.elements || {})) {
+  for (const [attr, node] of Object.entries(tree)) {
+    if (attr === '__compat' || !node.__compat) continue;
+    const c = node.__compat;
+    push({
+      id: `ref-svg-${elem}-${attr}`,
+      cat: 'Referans/SVG',
+      q: `svg ${elem} ${camelWords(attr)} öznitelik attribute`,
+      title: `SVG: <${elem}> özniteliği: ${attr}`,
+      a: [`<${elem}> SVG elemanının özniteliği.`, statusLine(c.status),
+          supportLine(c.support), mdnLine(c)]
+    });
+  }
+}
+for (const [name, tree] of Object.entries(bcd.mathml?.elements || {})) {
+  const c = tree.__compat;
+  if (!c) continue;
+  push({
+    id: `ref-mathml-${name}`,
+    cat: 'Referans/MathML',
+    q: `mathml matematik ${camelWords(name)} eleman element`,
+    title: `MathML: <${name}>`,
+    a: [`MathML (matematiksel işaretleme) elemanı.`, statusLine(c.status),
+        supportLine(c.support), mdnLine(c)],
+    code: `<math><${name}>…</${name}></math>`
+  });
+}
+for (const [obj, tree] of Object.entries(bcd.javascript.builtins)) {
+  for (const [sub, node] of Object.entries(tree)) {
+    if (sub === '__compat') continue;
+    for (const [leaf, leafNode] of Object.entries(node)) {
+      if (leaf === '__compat' || !leafNode.__compat) continue;
+      const c = leafNode.__compat;
+      push({
+        id: `ref-js-${obj}-${sub}-${leaf}`,
+        cat: 'Referans/JavaScript',
+        q: `javascript js ${camelWords(obj)} ${camelWords(sub)} ${camelWords(leaf)} parametre seçenek`,
+        title: `JavaScript: ${obj}.${sub} → ${camelWords(leaf)}`,
+        a: [`${obj}.${sub} özelliğinin alt özelliği/parametresi.`,
+            statusLine(c.status),
+            supportLine(c.support, [['Node.js', 'nodejs'], ['Deno', 'deno']]),
+            mdnLine(c)]
+      });
+    }
+  }
+}
+for (const [rule, tree] of Object.entries(bcd.css['at-rules'] || {})) {
+  for (const [desc, node] of Object.entries(tree)) {
+    if (desc === '__compat' || !node.__compat) continue;
+    const c = node.__compat;
+    push({
+      id: `ref-cssat-${rule}-${desc}`,
+      cat: 'Referans/CSS',
+      q: `css at kural rule @${rule} ${camelWords(desc)} yönerge descriptor`,
+      title: `CSS: @${rule} → ${desc}`,
+      a: [`@${rule} kuralının yönergesi/özelliği.`, statusLine(c.status),
+          supportLine(c.support), mdnLine(c)]
+    });
+  }
+}
+
 /* --- SVG öznitelikleri + WebAssembly API --- */
 for (const [attr, tree] of Object.entries(bcd.svg.global_attributes || {})) {
   const c = tree.__compat;
@@ -347,7 +409,8 @@ const sources = [
   ['handlebars 4.7.8 (MIT)', `${DL}/handlebars-4.7.8/dist/handlebars.js`],
   ['luxon 3.5.0 (MIT)', `${DL}/luxon-3.5.0/build/global/luxon.js`],
   ['underscore 1.13.7 (MIT)', `${DL}/underscore-1.13.7/underscore.js`],
-  ['backbone 1.6.0 (MIT)', `${DL}/backbone-1.6.0/backbone.js`]
+  ['backbone 1.6.0 (MIT)', `${DL}/backbone-1.6.0/backbone.js`],
+  ['typescript 5.5.4 (Apache-2.0)', `${DL}/typescript-5.5.4/lib/typescript.js`]
 ];
 // express: lib altındaki tüm .js dosyaları
 function walk(dir) {
@@ -360,7 +423,7 @@ walk(`${DL}/express-4.21.2/lib`).forEach(p => sources.push(['express 4.21.2 (MIT
 
 const seen = new Set();
 const lines = [];
-let budget = 4.6e6; // ~4.5 MB hedef
+let budget = 5.6e6; // ~5.5 MB hedef
 const perSource = {};
 
 for (const [label, file] of sources) {

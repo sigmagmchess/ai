@@ -3,6 +3,19 @@
    Tüm içerik doğrulanmış, gerçek teknik bilgidir.
    ========================================================= */
 
+/* Kategori aileleri: bilgi ağı renkleri ve nöral niyet sınıflandırıcısının
+   etiketleri bu sabit listeden gelir (sıra sabittir — renk döngüsü yok) */
+const VEGA_FAMILIES = [
+  ["Diller",     ["JavaScript", "TypeScript", "Python"],                        "#8b7cff"],
+  ["Frontend",   ["React", "CSS", "HTML", "Web"],                               "#22d3ee"],
+  ["Backend",    ["Node.js", "Backend", "Veritabanı", "Ağ", "DevOps", "Linux"], "#34d399"],
+  ["Algoritma",  ["Algoritmalar", "Veri Yapıları", "Kavramlar"],                "#fbbf24"],
+  ["Yapay Zekâ", ["Yapay Zeka"],                                                "#f472b6"],
+  ["Güvenlik",   ["Güvenlik"],                                                  "#fb7185"],
+  ["Araçlar",    ["Git", "Araçlar", "Tasarım"],                                 "#60a5fa"],
+  ["Öğretilen",  ["Öğretilen"],                                                 "#a3e635"]
+];
+
 const VEGA_KNOWLEDGE = [
   // ---------- JAVASCRIPT ----------
   {
@@ -629,7 +642,10 @@ Aynı betimleme aynı besteyi üretir — üretim tamamen algoritmik ve yereldir
   {
     id: "wiki-sss", title: "SSS",
     body: `**Vega gerçekten 7.5 milyar parametreli mi?**
-Hayır — "7.5B-Code" ürün adıdır. Gerçek bir 7.5B modeli GPU kümeleri ister ve tarayıcıda eğitilemez. Vega'nın motoru dürüst bir hibrittir: TF-IDF anlamsal arama + n-gram dil modeli + çevrimiçi öğrenme. Küçüktür ama öğrenmesi gerçektir.
+Hayır — "7.5B-Code" ürün adıdır. Gerçek bir 7.5B modeli GPU kümeleri ister ve tarayıcıda eğitilemez. Vega'nın motoru dürüst bir hibrittir: gerçek sinir ağları (~75 bin parametre, saf JS geri yayılım + Adam optimizer) + TF-IDF anlamsal arama + n-gram dil modeli + çevrimiçi öğrenme. Küçüktür ama öğrenmesi ve gradyanları gerçektir.
+
+**Sinir ağları gerçekten eğitiliyor mu?**
+Evet. Niyet sınıflandırıcısı her sayfa açılışında bilgi tabanı üzerinde arka planda eğitilir (~%93 doğrulama doğruluğu) ve tahminleri cevap seçimini gerçekten etkiler. Karakter düzeyi dil modeli Admin > Nöral Çekirdek'ten eğitilir: canlı kayıp eğrisi gerçek gradyan inişidir, ağırlıklar tarayıcına kaydedilir ve "üret:" komutuyla örnekleyebilirsin. Geri yayılım kodunun doğruluğu XOR testiyle doğrulanmıştır.
 
 **Verilerim nereye gidiyor?**
 Hiçbir yere. Tüm eğitim, sohbet geçmişi ve öğretiler tarayıcınızın localStorage'ında kalır. Ağ isteği atılmaz.
