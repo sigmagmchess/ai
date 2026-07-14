@@ -463,9 +463,26 @@ const sources = [
   ['luxon 3.5.0 (MIT)', `${DL}/luxon-3.5.0/build/global/luxon.js`],
   ['underscore 1.13.7 (MIT)', `${DL}/underscore-1.13.7/underscore.js`],
   ['backbone 1.6.0 (MIT)', `${DL}/backbone-1.6.0/backbone.js`],
-  ['typescript 5.5.4 (Apache-2.0)', `${DL}/typescript-5.5.4/lib/typescript.js`],
-  ['@babel/standalone 7.25.6 (MIT)', `${DL}/babel-standalone-7.25.6/babel.js`]
 ];
+
+// Gerçek Python kaynak kodu (PyPI wheel'lerinden) — derlem çok dilli olsun
+function walkPy(dir) {
+  return readdirSync(dir).flatMap(f => {
+    const p = path.join(dir, f);
+    return statSync(p).isDirectory() ? walkPy(p) : (f.endsWith('.py') ? [p] : []);
+  });
+}
+[['django 5.1.1 (BSD-3)', `${DL}/py-Django/django`],
+ ['flask 3.0.3 (BSD-3)', `${DL}/py-flask/flask`],
+ ['requests 2.32.3 (Apache-2.0)', `${DL}/py-requests/requests`],
+ ['sqlalchemy 2.0.35 (MIT)', `${DL}/py-SQLAlchemy/sqlalchemy`]
+].forEach(([label, dir]) => {
+  try { walkPy(dir).forEach(p => sources.push([label, p])); } catch (e) {}
+});
+
+// Büyük tekil kaynaklar en sona: kalan bütçeyi doldururlar
+sources.push(['typescript 5.5.4 (Apache-2.0)', `${DL}/typescript-5.5.4/lib/typescript.js`]);
+sources.push(['@babel/standalone 7.25.6 (MIT)', `${DL}/babel-standalone-7.25.6/babel.js`]);
 walk(`${DL}/webpack-5.94.0/lib`).forEach(p => sources.push(['webpack 5.94.0 (MIT)', p]));
 // express: lib altındaki tüm .js dosyaları
 function walk(dir) {
@@ -478,7 +495,7 @@ walk(`${DL}/express-4.21.2/lib`).forEach(p => sources.push(['express 4.21.2 (MIT
 
 const seen = new Set();
 const lines = [];
-let budget = 8.2e6; // ~8 MB hedef
+let budget = 10.8e6; // ~10.5 MB hedef (JS + TS + Python karışık)
 const perSource = {};
 
 for (const [label, file] of sources) {
@@ -488,7 +505,8 @@ for (const [label, file] of sources) {
     line = line.trim();
     if (inBlock) { if (line.includes('*/')) inBlock = false; continue; }
     if (line.startsWith('/*')) { if (!line.includes('*/')) inBlock = true; continue; }
-    if (!line || line.startsWith('//') || line.startsWith('*')) continue;
+    if (!line || line.startsWith('//') || line.startsWith('*') ||
+        line.startsWith('#') || line.startsWith('"""') || line.startsWith("'''")) continue;
     if (line.length < 10 || line.length > 140) continue;
     if (!/[a-zA-Z]{3}/.test(line)) continue;
     if (seen.has(line)) continue;

@@ -34,8 +34,9 @@ const VegaEngine = (() => {
   function baseKnowledge() {
     const ext = (typeof VEGA_KNOWLEDGE_EXT !== "undefined") ? VEGA_KNOWLEDGE_EXT : [];
     const ext2 = (typeof VEGA_KNOWLEDGE_EXT2 !== "undefined") ? VEGA_KNOWLEDGE_EXT2 : [];
+    const ext3 = (typeof VEGA_KNOWLEDGE_EXT3 !== "undefined") ? VEGA_KNOWLEDGE_EXT3 : [];
     const ref = (typeof VEGA_KNOWLEDGE_REF !== "undefined") ? VEGA_KNOWLEDGE_REF : [];
-    return [...VEGA_KNOWLEDGE, ...ext, ...ext2, ...ref];
+    return [...VEGA_KNOWLEDGE, ...ext, ...ext2, ...ext3, ...ref];
   }
   function baseCorpus() {
     const ext = (typeof VEGA_CODE_CORPUS_EXT !== "undefined") ? VEGA_CODE_CORPUS_EXT : [];
@@ -118,7 +119,10 @@ const VegaEngine = (() => {
   function buildIndex() {
     const N = state.docs.length;
     const df = {};
-    const docTerms = state.docs.map(d => terms(d.q + " " + d.title + " " + d.a));
+    // Alan ağırlıklandırma: başlık terimleri iki kez sayılır — başlıkta
+    // geçen sorgu kelimesi, gövdede geçenden daha güçlü sinyaldir
+    const docTerms = state.docs.map(d =>
+      terms(d.q + " " + d.title + " " + d.title + " " + d.a));
 
     docTerms.forEach(ts => {
       new Set(ts).forEach(t => { df[t] = (df[t] || 0) + 1; });
@@ -775,8 +779,13 @@ const VegaEngine = (() => {
   }
 
   function exportModel() {
-    let nn = null;
-    try { nn = localStorage.getItem("vega_nn_v1") || null; } catch (e) {}
+    let nn = null, nnw = null, lyra1 = null, lyra15 = null;
+    try {
+      nn = localStorage.getItem("vega_nn_v1") || null;
+      nnw = localStorage.getItem("vega_nn_w1") || null;
+      lyra1 = localStorage.getItem("vega_lyra_1") || null;
+      lyra15 = localStorage.getItem("vega_lyra_15") || null;
+    } catch (e) {}
     return JSON.stringify({
       format: "vega-model-v1",
       exported: new Date().toISOString(),
@@ -784,7 +793,7 @@ const VegaEngine = (() => {
       weights: Object.fromEntries(state.docs
         .filter(d => d.weight !== (d._bw ?? 1.0)).map(d => [d.id, d.weight])),
       stats: state.stats,
-      nn   // eğitilmiş sinir ağı ağırlıkları da modelle taşınır
+      nn, nnw, lyra1, lyra15   // tüm eğitilmiş sinir ağları modelle taşınır
     }, null, 2);
   }
 
@@ -797,12 +806,13 @@ const VegaEngine = (() => {
     state.docs.forEach(d => {
       if (data.weights && data.weights[d.id] != null) d.weight = data.weights[d.id];
     });
-    if (data.nn) {
-      try {
-        localStorage.setItem("vega_nn_v1", data.nn);
-        if (typeof VegaML !== "undefined") VegaML.loadCodeNet();
-      } catch (e) { /* kota — sinir ağı ağırlıkları atlandı */ }
-    }
+    try {
+      if (data.nn) localStorage.setItem("vega_nn_v1", data.nn);
+      if (data.nnw) localStorage.setItem("vega_nn_w1", data.nnw);
+      if (data.lyra1) localStorage.setItem("vega_lyra_1", data.lyra1);
+      if (data.lyra15) localStorage.setItem("vega_lyra_15", data.lyra15);
+      if (typeof VegaML !== "undefined" && data.nn) VegaML.loadCodeNet();
+    } catch (e) { /* kota — sinir ağı ağırlıkları atlandı */ }
     buildIndex();
     persist();
     return (data.custom || []).length;

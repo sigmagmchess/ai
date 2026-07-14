@@ -75,8 +75,9 @@ index.html
 | Paket | Boyut | İçerik | Kaynak / Lisans |
 |---|---|---|---|
 | `vega-data-ref.js` | ~6 MB | 15.041 referans kaydı: CSS özellik+değer+seçici+tür+at-kural yönergeleri, HTML eleman+öznitelik+global, SVG eleman+öznitelik, MathML, JS yerleşik+operatör+deyim+derinlik-3, Web API arayüz+üye+alt seçenek, HTTP başlık+yönerge+metod, WebAssembly, 1.255 tarayıcı sürüm tarihçesi — gerçek destek sürümleriyle | [mdn/browser-compat-data](https://github.com/mdn/browser-compat-data) + [mdn/data](https://github.com/mdn/data) — CC0 (kamu malı) |
-| `vega-corpus-big.js` | ~8.2 MB | 165.261 benzersiz gerçek kod satırı (n-gram + nöral eğitim) | lodash, vue, d3, react-dom, three.js, axios, jquery, rxjs, handlebars, luxon, moment, underscore, backbone, express, **typescript derleyicisi**, @babel/standalone — MIT/ISC/Apache-2.0 |
+| `vega-corpus-big.js` | ~11 MB | 249.502 benzersiz gerçek kod satırı, **çok dilli** (JS + TS + Python) — n-gram + nöral eğitim | JS: lodash, vue, d3, react-dom, three.js, axios, jquery, rxjs, handlebars, luxon, moment, underscore, backbone, typescript, babel · **Python: django, sqlalchemy, flask, requests** — MIT/ISC/Apache-2.0/BSD-3 |
 | `vega-data-ext2.js` | ~150 KB | 113 küratörlü Türkçe kayıt: **Go, Rust, Java, İşletim Sistemi, Sistem Tasarımı, Test, Ağ (derin), Matematik** — çok-ajanlı üretim + her paket bağımsız hakem ajanla olgusal doğrulama | özgün içerik |
+| `vega-data-ext3.js` | ~80 KB | 56 küratörlü Türkçe kayıt: **Konteyner & Bulut (Docker/K8s), C/C++, İleri SQL, Erişilebilirlik & Performans** — paralel ajan üretimi, öz-denetimli | özgün içerik |
 
 Paketleri güncellemek için: `node scripts/build-data.mjs` (kaynakları npm'den indirip yeniden üretir).
 
