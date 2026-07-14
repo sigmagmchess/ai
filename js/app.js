@@ -40,6 +40,85 @@ function wordTrainingTexts() {
   return texts;
 }
 
+// Lyra veri karışımları — her kişilik farklı MB'lik gerçek veriyle beslenir
+function lyraTexts(ver) {
+  const docs = VegaEngine.getDocs();
+  const cur = docs.filter(d => !d.id.startsWith("ref-"));
+  const clean = d => d.title + ". " + d.a.replace(/Dokümantasyon: \S+/g, "");
+
+  if (ver === "1") {   // Kod & Matematik
+    const cats = ["Matematik", "Algoritmalar", "Veri Yapıları", "Kavramlar",
+                  "JavaScript", "TypeScript", "Python", "Go", "Rust", "Java"];
+    const base = cur.filter(d => cats.includes(d.cat)).map(clean);
+    const texts = [...base, ...base, ...base];
+    // gerçek kod satırları: derlemden geniş örneklem (~1 MB metin)
+    if (typeof VEGA_BIG_CORPUS !== "undefined") {
+      const step = Math.max(1, Math.floor(VEGA_BIG_CORPUS.length / 18000));
+      for (let i = 0; i < VEGA_BIG_CORPUS.length && texts.length < base.length * 3 + 18000; i += step)
+        texts.push(VEGA_BIG_CORPUS[i]);
+    }
+    const refs = docs.filter(d => d.id.startsWith("ref-js"));
+    for (let i = 0; i < refs.length && i < 2400; i += 3) texts.push(clean(refs[i]));
+    return texts;
+  }
+
+  // 1.5: Sözcük & Kavram
+  const cats1 = ["Matematik", "Algoritmalar", "JavaScript", "TypeScript",
+                 "Python", "Go", "Rust", "Java", "Veri Yapıları"];
+  const base = cur.filter(d => !cats1.includes(d.cat)).map(clean);
+  const texts = [...base, ...base, ...base];
+  if (typeof VEGA_WIKI !== "undefined") {
+    VEGA_WIKI.forEach(w => { texts.push(w.body.replace(/[*`#>]/g, " ")); });
+  }
+  const refs = docs.filter(d => d.id.startsWith("ref-http") ||
+    d.id.startsWith("ref-html") || d.id.startsWith("ref-css") ||
+    d.id.startsWith("ref-api"));
+  for (let i = 0; i < refs.length && texts.length < base.length * 3 + 4500; i += 6)
+    texts.push(clean(refs[i]));
+  return texts;
+}
+
+function renderLyraStats() {
+  const info = VegaML.lyraInfo();
+  const rows = [];
+  for (const [ver, i] of Object.entries(info)) {
+    const name = ver === "1" ? "Lyra-1 · Kod & Mat" : "Lyra-1.5 · Sözcük";
+    rows.push(`
+      <div class="stat"><div class="val">${i.ready ? "hazır" : "—"}</div>
+        <div class="lbl">${name}</div></div>
+      <div class="stat"><div class="val">${i.ready ? i.params.toLocaleString("tr-TR") : "—"}</div>
+        <div class="lbl">parametre</div></div>
+      <div class="stat"><div class="val">${i.ready && i.cfg ? "lr " + i.cfg.lr + " · g" + i.cfg.hid : "—"}</div>
+        <div class="lbl">kendi seçtiği reçete</div></div>
+      <div class="stat"><div class="val">${i.bestVal != null ? i.bestVal.toFixed(2) : "—"}</div>
+        <div class="lbl">en iyi doğrulama kaybı</div></div>`);
+  }
+  $("#lyra-stats").innerHTML = rows.join("");
+}
+
+async function trainLyraUI(ver) {
+  const btn = $(ver === "1" ? "#lyra1-btn" : "#lyra15-btn");
+  btn.disabled = true;
+  setStatus(`Lyra-${ver} eğitiliyor…`, true);
+  const t0 = performance.now();
+  const res = await VegaML.trainLyra(ver, lyraTexts(ver), {
+    onProgress: (stage, s, total, msg) => {
+      $("#lyra-label").textContent = `Lyra-${ver} · ${msg}`;
+      $("#lyra-fill").style.width =
+        (stage === "meta" ? Math.round(s / total * 25)
+                          : 25 + Math.round(s / total * 75)) + "%";
+    }
+  });
+  const sec = ((performance.now() - t0) / 1000).toFixed(1);
+  $("#lyra-label").textContent =
+    `Lyra-${ver} hazır (${sec} sn) · kendi seçtiği reçete: lr=${res.winner.lr}, gizli=${res.winner.hid} · ` +
+    `denemeler: ${res.trials.map(t => `lr${t.lr}/g${t.hid}→${t.val}`).join(" · ")}`;
+  setStatus("Model hazır", false);
+  btn.disabled = false;
+  renderLyraStats();
+  toast(`Lyra-${ver} eğitildi 🎭`);
+}
+
 function initNeural() {
   // Kaydedilmiş sinir ağları varsa yükle
   const hadCode = VegaML.loadCodeNet();
@@ -48,6 +127,22 @@ function initNeural() {
     // Harman istatistikleri ağırlıklarla saklanmaz — hızlıca yeniden sayılır
     VegaML.buildWordStats(wordTrainingTexts());
   }
+
+  // Lyra kişilikleri: kayıtlı ağırlıklar + istatistiklerin yeniden kurulumu
+  const hadL1 = VegaML.loadLyra("1", lyraTexts("1"));
+  const hadL15 = VegaML.loadLyra("1.5", lyraTexts("1.5"));
+  if (hadL1 || hadL15) {
+    $("#lyra-label").textContent = "Kaydedilmiş Lyra ağırlıkları yüklendi: " +
+      [hadL1 && "Lyra-1", hadL15 && "Lyra-1.5"].filter(Boolean).join(" + ");
+    $("#lyra-fill").style.width = "100%";
+  }
+  renderLyraStats();
+  $("#lyra1-btn").addEventListener("click", () => trainLyraUI("1"));
+  $("#lyra15-btn").addEventListener("click", () => trainLyraUI("1.5"));
+  $("#lyra-clear-btn").addEventListener("click", () => {
+    VegaML.clearLyra();
+    location.reload();
+  });
   if (hadCode || hadWord) {
     $("#nn-label").textContent =
       `Kaydedilmiş ağırlıklar yüklendi (${[hadCode && "kod ağı", hadWord && "kelime ağı"]

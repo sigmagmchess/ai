@@ -394,6 +394,30 @@ const VegaEngine = (() => {
       };
     }
 
+    // Lyra kişilikleri: uzmanlaşmış nöral dil modelleri
+    const lyraMatch = text.match(/^lyra\s*[- ]?\s*(1\.5|1)\s*:\s*(.+)$/is);
+    if (lyraMatch) {
+      const ver = lyraMatch[1];
+      const ml = (typeof VegaML !== "undefined") ? VegaML : null;
+      const ready = ml && ml.lyraInfo()[ver] && ml.lyraInfo()[ver].ready;
+      if (!ready) {
+        return {
+          type: "info",
+          text: `**Lyra-${ver}** henüz eğitilmedi. **Admin > Lyra Kişilikleri** bölümünden eğit — önce nasıl öğreneceğini kendisi seçer (4 hiperparametre denemesi), sonra kazanan reçeteyle tam eğitim yapar (~30 sn).`,
+          docId: null
+        };
+      }
+      const prefix = lyraMatch[2].trim();
+      const g = ml.generateLyra(ver, prefix, 40, 0.8, hashString("lyra" + ver + prefix));
+      const kimlik = ver === "1" ? "Kod & Matematik uzmanı" : "Sözcük & Kavram uzmanı";
+      return {
+        type: "code",
+        text: `**Lyra-${ver}** (${kimlik}) üretti · **özgünlük %${Math.round(g.novelty * 100)}** — üretilen üçlü dizilimlerin eğitim verisinde birebir geçMEme oranı; yüksek = ezber değil, kendi kurduğu dizilim:`,
+        code: g.text,
+        docId: null
+      };
+    }
+
     // Kelime üretim komutu (kelime düzeyi sinir ağı)
     const wordMatch = text.match(/^(kelime|cümle)\s*:\s*(.+)$/is);
     if (wordMatch) {

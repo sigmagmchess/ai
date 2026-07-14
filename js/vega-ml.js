@@ -89,13 +89,16 @@ const VegaML = (() => {
     const b2 = zeros(OUT);
     const opts = [adam(W1), adam(b1), adam(W2), adam(b2)];
 
-    function forward(X, B, cache) {
+    function forward(X, B, cache, dropMask) {
       const z1 = zeros(B * HID);
       matmul(X, W1, B, IN, HID, z1);
       for (let b = 0; b < B; b++)
         for (let h = 0; h < HID; h++) z1[b * HID + h] += b1[h];
       const a1 = zeros(B * HID);
       for (let i = 0; i < z1.length; i++) a1[i] = z1[i] > 0 ? z1[i] : 0;
+      // Dropout (yalnız eğitimde): rastgele nöronlar susturulur — ağ tek
+      // tek nöronlara (ezber yollarına) bel bağlayamaz, genellemek zorunda kalır
+      if (dropMask) for (let i = 0; i < a1.length; i++) a1[i] *= dropMask[i];
       const z2 = zeros(B * OUT);
       matmul(a1, W2, B, HID, OUT, z2);
       for (let b = 0; b < B; b++)
@@ -115,9 +118,16 @@ const VegaML = (() => {
     }
 
     // X[B×IN], y: hedef sınıf dizini[B] → ortalama çapraz entropi kaybı
-    function trainStep(X, y, B, lr) {
+    function trainStep(X, y, B, lr, dropout = 0) {
       const cache = {};
-      const P = forward(X, B, cache);
+      let dropMask = null;
+      if (dropout > 0) {
+        dropMask = new Float32Array(B * HID);
+        const scale = 1 / (1 - dropout);   // inverted dropout
+        for (let i = 0; i < dropMask.length; i++)
+          dropMask[i] = Math.random() < dropout ? 0 : scale;
+      }
+      const P = forward(X, B, cache, dropMask);
       let loss = 0;
       const dz2 = zeros(B * OUT);
       for (let b = 0; b < B; b++) {
@@ -131,7 +141,10 @@ const VegaML = (() => {
       for (let b = 0; b < B; b++)
         for (let o = 0; o < OUT; o++) db2[o] += dz2[b * OUT + o];
       const dz1 = zeros(B * HID);
-      for (let i = 0; i < da1.length; i++) dz1[i] = cache.z1[i] > 0 ? da1[i] : 0;
+      for (let i = 0; i < da1.length; i++) {
+        dz1[i] = cache.z1[i] > 0 ? da1[i] : 0;
+        if (dropMask) dz1[i] *= dropMask[i];   // susturulan nörona gradyan akmaz
+      }
       const dW1 = zeros(W1.length), db1 = zeros(HID);
       const dX = null; // girdi gradyanı (embedding modelinde ayrıca ele alınır)
       matmulBack(X, W1, dz1, B, IN, HID, dW1, dX);
@@ -519,10 +532,11 @@ const VegaML = (() => {
     }
 
     wordnet.history = [];
+    const DROPOUT = 0.15;   // ezber karşıtı düzenlileştirme
     let bestVal = Infinity, bestSnapshot = null;
     for (let s = 1; s <= steps; s++) {
       const { X, y, idxs } = makeBatch(trainData, batch, rand);
-      const { loss, dz1 } = net.trainStep(X, y, batch, lr);
+      const { loss, dz1 } = net.trainStep(X, y, batch, lr, DROPOUT);
 
       // embedding geri yayılımı (CodeNet ile aynı desen)
       const dEmb = zeros(emb.length);
@@ -685,6 +699,329 @@ const VegaML = (() => {
     wordnet.history = [];
   }
 
+  /* ============================================================
+     4) LYRA KİŞİLİKLERİ — uzmanlaşmış kelime dil modelleri
+     Her Lyra bağımsız bir sinir ağıdır; kendi veri karışımı, kendi
+     sözlüğü, kendi ağırlıkları vardır.
+     - META-ÖĞRENME: Lyra nasıl öğreneceğini kendisi seçer — birden
+       çok hiperparametre adayını (öğrenme hızı × ağ genişliği) kısa
+       denemelerle eğitir, doğrulama kaybıyla ölçer, kazananla tam
+       eğitim yapar. Seçim koda gömülü değildir, ölçümden çıkar.
+     - EZBER KARŞITI: dropout + erken durdurma + ÖZGÜNLÜK metriği
+       (üretilen 3-kelime gruplarının eğitim verisinde birebir
+       GEÇMEME oranı — ezber/üretim ayrımının dürüst ölçüsü).
+     ============================================================ */
+  function createWordLM(name) {
+    const S = {
+      name, ready: false, words: null, wordIdx: null,
+      emb: null, net: null, history: [], trainedWords: 0,
+      cfg: null, trials: [],            // meta-öğrenme kayıtları
+      tri: new Map(), bi: new Map(),    // harman + özgünlük istatistikleri
+      ctx: 6, embDim: 24
+    };
+
+    function buildStats(stream) {
+      S.tri = new Map(); S.bi = new Map();
+      for (let i = 2; i < stream.length; i++) {
+        const w1 = stream[i - 2], w2 = stream[i - 1], w3 = stream[i];
+        const tk = w1 + " " + w2;
+        let tm = S.tri.get(tk);
+        if (!tm) { tm = { total: 0, m: new Map() }; S.tri.set(tk, tm); }
+        tm.m.set(w3, (tm.m.get(w3) || 0) + 1); tm.total++;
+        let bm = S.bi.get(w2);
+        if (!bm) { bm = { total: 0, m: new Map() }; S.bi.set(w2, bm); }
+        bm.m.set(w3, (bm.m.get(w3) || 0) + 1); bm.total++;
+      }
+    }
+
+    function toStream(texts) {
+      const stream = [];
+      texts.forEach(t => { stream.push(...wordTokens(t), "."); });
+      return stream;
+    }
+
+    // Tek deneme eğitimi: verilen hiperparametrelerle steps adım
+    async function trainWith(stream, hp, steps, dropout, onStep) {
+      const freq = new Map();
+      stream.forEach(w => freq.set(w, (freq.get(w) || 0) + 1));
+      const words = ["<?>", ...[...freq.entries()]
+        .sort((a, b) => b[1] - a[1]).slice(0, hp.vocab - 1).map(e => e[0])];
+      const wordIdx = new Map(words.map((w, i) => [w, i]));
+      const V = words.length;
+      const data = new Int32Array(stream.length);
+      for (let i = 0; i < stream.length; i++) data[i] = wordIdx.get(stream[i]) ?? 0;
+      const cut = Math.floor(data.length * 0.93);
+      const trainData = data.subarray(0, cut), valData = data.subarray(cut);
+
+      const rand = rng(777);
+      const emb = randInit(V * S.embDim, 0.08, rand);
+      const embOpt = adam(emb);
+      const net = createMLP(S.ctx * S.embDim, hp.hid, V, 13);
+
+      function makeBatch(src, B, r) {
+        const X = zeros(B * S.ctx * S.embDim);
+        const idxs = new Int32Array(B * S.ctx);
+        const y = new Int32Array(B);
+        for (let b = 0; b < B; b++) {
+          let pos = 0;
+          for (let t = 0; t < 8; t++) {
+            pos = S.ctx + Math.floor(r() * (src.length - S.ctx - 1));
+            if (src[pos] !== 0) break;
+          }
+          for (let c = 0; c < S.ctx; c++) {
+            const wi = src[pos - S.ctx + c];
+            idxs[b * S.ctx + c] = wi;
+            X.set(emb.subarray(wi * S.embDim, wi * S.embDim + S.embDim),
+                  (b * S.ctx + c) * S.embDim);
+          }
+          y[b] = src[pos];
+        }
+        return { X, y, idxs };
+      }
+      function valLoss() {
+        const r = rng(3), B = 128;
+        const { X, y } = makeBatch(valData, B, r);
+        const P = net.forward(X, B, null);
+        let L = 0;
+        for (let b = 0; b < B; b++) L += -Math.log(Math.max(1e-9, P[b * V + y[b]]));
+        return L / B;
+      }
+
+      const history = [];
+      let bestVal = Infinity, snap = null;
+      for (let s = 1; s <= steps; s++) {
+        const { X, y, idxs } = makeBatch(trainData, 32, rand);
+        const { loss, dz1 } = net.trainStep(X, y, 32, hp.lr, dropout);
+        // embedding geri yayılımı
+        const dEmb = zeros(emb.length);
+        for (let b = 0; b < 32; b++) {
+          for (let c = 0; c < S.ctx; c++) {
+            const wi = idxs[b * S.ctx + c];
+            for (let e2 = 0; e2 < S.embDim; e2++) {
+              let acc = 0;
+              const col = c * S.embDim + e2;
+              for (let h = 0; h < hp.hid; h++)
+                acc += dz1[b * hp.hid + h] * net.W1[col * hp.hid + h];
+              dEmb[wi * S.embDim + e2] += acc;
+            }
+          }
+        }
+        embOpt(dEmb, hp.lr);
+
+        if (s % 25 === 0 || s === steps) {
+          const vl = valLoss();
+          history.push({ step: s, loss, val: vl });
+          if (vl < bestVal) {
+            bestVal = vl;
+            snap = { emb: Float32Array.from(emb),
+                     W1: Float32Array.from(net.W1), b1: Float32Array.from(net.b1),
+                     W2: Float32Array.from(net.W2), b2: Float32Array.from(net.b2) };
+          }
+          if (onStep) onStep(s, steps, loss, vl);
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+      if (snap) {
+        emb.set(snap.emb);
+        net.W1.set(snap.W1); net.b1.set(snap.b1);
+        net.W2.set(snap.W2); net.b2.set(snap.b2);
+      }
+      return { words, wordIdx, emb, net, history, bestVal,
+               trainedWords: trainData.length };
+    }
+
+    // META-ÖĞRENME: adayları dene → ölç → kazananla tam eğitim
+    async function metaTrain(texts, opts = {}) {
+      const { onProgress } = opts;
+      const stream = toStream(texts);
+      buildStats(stream);
+
+      const candidates = [
+        { lr: 0.006, hid: 72, vocab: 1000 },
+        { lr: 0.012, hid: 72, vocab: 1000 },
+        { lr: 0.006, hid: 96, vocab: 1000 },
+        { lr: 0.003, hid: 56, vocab: 1000 }
+      ];
+      S.trials = [];
+      for (let i = 0; i < candidates.length; i++) {
+        const hp = candidates[i];
+        if (onProgress) onProgress("meta", i + 1, candidates.length,
+          `deneme ${i + 1}/4: lr=${hp.lr} gizli=${hp.hid}`);
+        const r = await trainWith(stream, hp, 130, 0.15, null);
+        S.trials.push({ ...hp, val: Math.round(r.bestVal * 1000) / 1000 });
+      }
+      S.trials.sort((a, b) => a.val - b.val);
+      const winner = S.trials[0];
+      if (onProgress) onProgress("meta-secim", 4, 4,
+        `kazanan: lr=${winner.lr} gizli=${winner.hid} (val ${winner.val})`);
+
+      const full = await trainWith(stream, winner, 650, 0.15,
+        (s, total, loss, vl) => {
+          if (onProgress) onProgress("egitim", s, total,
+            `tam eğitim ${s}/${total} · kayıp ${loss.toFixed(3)} · doğrulama ${vl.toFixed(3)}`);
+        });
+
+      Object.assign(S, {
+        words: full.words, wordIdx: full.wordIdx, emb: full.emb, net: full.net,
+        history: full.history, trainedWords: full.trainedWords,
+        cfg: winner, ready: true
+      });
+      return { winner, bestVal: full.bestVal, trials: S.trials };
+    }
+
+    function generateFrom(prefix, maxWords = 40, temperature = 0.8, seed = 1) {
+      if (!S.ready) return null;
+      const { words, wordIdx, emb, net } = S;
+      const V = words.length;
+      const rand = rng(seed >>> 0 || 1);
+      const pre = wordTokens(prefix);
+      let ctx = new Int32Array(S.ctx);
+      for (let c = 0; c < S.ctx; c++) {
+        const w = pre[pre.length - S.ctx + c];
+        ctx[c] = (w != null ? wordIdx.get(w) : null) ?? wordIdx.get(".") ?? 0;
+      }
+      const out = [...pre];
+      const recent = [];
+      let sentences = 0;
+      for (let i = 0; i < maxWords; i++) {
+        const X = zeros(S.ctx * S.embDim);
+        for (let c = 0; c < S.ctx; c++)
+          X.set(emb.subarray(ctx[c] * S.embDim, ctx[c] * S.embDim + S.embDim),
+                c * S.embDim);
+        const P = net.forward(X, 1, null);
+        const l1 = out[out.length - 2] || ".", l2 = out[out.length - 1] || ".";
+        const tri = S.tri.get(l1 + " " + l2), bi = S.bi.get(l2);
+        const stat = tri || bi;
+        const lambda = tri ? 0.5 : (bi ? 0.35 : 0);
+        const mixed = new Float64Array(V);
+        for (let v = 1; v < V; v++) {
+          let p = (1 - lambda) * P[v];
+          if (stat) p += lambda * ((stat.m.get(words[v]) || 0) / stat.total);
+          let l = Math.pow(Math.max(1e-9, p), 1 / temperature);
+          if (recent.includes(v)) l *= 0.12;
+          mixed[v] = l;
+        }
+        const order = [];
+        for (let v = 1; v < V; v++) if (mixed[v] > 0) order.push(v);
+        order.sort((a, b) => mixed[b] - mixed[a]);
+        let total = 0;
+        for (const v of order) total += mixed[v];
+        const nucleus = [];
+        let cum = 0;
+        for (const v of order) {
+          nucleus.push(v); cum += mixed[v];
+          if (cum / total >= 0.92) break;
+        }
+        let r = rand() * cum, pick = nucleus[0];
+        for (const v of nucleus) { r -= mixed[v]; if (r <= 0) { pick = v; break; } }
+        const w = words[pick];
+        out.push(w);
+        recent.push(pick);
+        if (recent.length > 4) recent.shift();
+        ctx = new Int32Array([...ctx.subarray(1), pick]);
+        if (w === ".") { sentences++; if (sentences >= 2 && i > 12) break; }
+      }
+      const text = out.join(" ").replace(/\s+\./g, ".").replace(/\.{2,}/g, ".")
+        .replace(/(^|\. )([a-zçğıöşü])/g, (m, p, ch) => p + ch.toLocaleUpperCase("tr"));
+      return { text, novelty: noveltyOf(out) };
+    }
+
+    // ÖZGÜNLÜK: üretilen 3-kelime dizilerinin eğitim verisinde birebir
+    // GEÇMEYENLERİNİN oranı. %0 = tam ezber, %100 = tamamen yeni dizilim.
+    function noveltyOf(tokens) {
+      let total = 0, novel = 0;
+      for (let i = 2; i < tokens.length; i++) {
+        const tm = S.tri.get(tokens[i - 2] + " " + tokens[i - 1]);
+        total++;
+        if (!tm || !tm.m.has(tokens[i])) novel++;
+      }
+      return total ? novel / total : 0;
+    }
+
+    function save(key) {
+      if (!S.ready) return false;
+      try {
+        localStorage.setItem(key, JSON.stringify({
+          v: 2, name: S.name, words: S.words, ctx: S.ctx, embDim: S.embDim,
+          hid: S.cfg.hid, cfg: S.cfg, trials: S.trials,
+          emb: f32ToB64(S.emb),
+          W1: f32ToB64(S.net.W1), b1: f32ToB64(S.net.b1),
+          W2: f32ToB64(S.net.W2), b2: f32ToB64(S.net.b2),
+          history: S.history, trainedWords: S.trainedWords
+        }));
+        return true;
+      } catch (e) { return false; }
+    }
+
+    function load(key, texts) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return false;
+        const d = JSON.parse(raw);
+        if (d.v !== 2 || d.ctx !== S.ctx || d.embDim !== S.embDim) return false;
+        const V = d.words.length;
+        S.words = d.words;
+        S.wordIdx = new Map(d.words.map((w, i) => [w, i]));
+        S.emb = b64ToF32(d.emb);
+        S.net = createMLP(S.ctx * S.embDim, d.hid, V, 13);
+        S.net.W1.set(b64ToF32(d.W1)); S.net.b1.set(b64ToF32(d.b1));
+        S.net.W2.set(b64ToF32(d.W2)); S.net.b2.set(b64ToF32(d.b2));
+        S.history = d.history || [];
+        S.trainedWords = d.trainedWords || 0;
+        S.cfg = d.cfg; S.trials = d.trials || [];
+        if (texts) buildStats(toStream(texts));   // harman + özgünlük için
+        S.ready = true;
+        return true;
+      } catch (e) { return false; }
+    }
+
+    function infoShort() {
+      return {
+        ready: S.ready,
+        params: S.net ? S.net.paramCount + (S.emb ? S.emb.length : 0) : 0,
+        vocab: S.words ? S.words.length : 0,
+        trainedWords: S.trainedWords,
+        history: S.history,
+        cfg: S.cfg, trials: S.trials,
+        bestVal: S.history.length ? Math.min(...S.history.map(h => h.val)) : null
+      };
+    }
+
+    return { metaTrain, generate: generateFrom, save, load,
+             buildStats: texts => buildStats(toStream(texts)), info: infoShort };
+  }
+
+  // Kişilik kayıtları
+  const lyra = {
+    "1":   { lm: createWordLM("Lyra-1 · Kod & Matematik"), key: "vega_lyra_1" },
+    "1.5": { lm: createWordLM("Lyra-1.5 · Sözcük & Kavram"), key: "vega_lyra_15" }
+  };
+
+  async function trainLyra(ver, texts, opts) {
+    const L = lyra[ver];
+    if (!L) throw new Error("Bilinmeyen Lyra sürümü: " + ver);
+    const res = await L.lm.metaTrain(texts, opts);
+    L.lm.save(L.key);
+    return res;
+  }
+  function generateLyra(ver, prefix, maxWords, temp, seed) {
+    const L = lyra[ver];
+    return L && L.lm.info().ready
+      ? L.lm.generate(prefix, maxWords, temp, seed) : null;
+  }
+  function loadLyra(ver, texts) {
+    const L = lyra[ver];
+    return L ? L.lm.load(L.key, texts) : false;
+  }
+  function clearLyra() {
+    Object.values(lyra).forEach(L => localStorage.removeItem(L.key));
+  }
+  function lyraInfo() {
+    const out = {};
+    for (const [ver, L] of Object.entries(lyra)) out[ver] = L.lm.info();
+    return out;
+  }
+
   /* ---------- Kalıcılık (base64 Float32) ---------- */
   function f32ToB64(f) {
     const u8 = new Uint8Array(f.buffer, f.byteOffset, f.byteLength);
@@ -769,5 +1106,6 @@ const VegaML = (() => {
            trainWordNet, generateWords, buildWordStats,
            saveWordNet, loadWordNet, clearWordNet,
            saveCodeNet, loadCodeNet, clearCodeNet, info,
+           trainLyra, generateLyra, loadLyra, clearLyra, lyraInfo,
            _mlp: createMLP };   // testler için
 })();

@@ -98,6 +98,8 @@
         <button class="chip">sql injection korunma</button>
         <button class="chip">transformer nedir?</button>
         <button class="chip">kelime: yapay zeka</button>
+        <button class="chip">lyra1: const dizi</button>
+        <button class="chip">lyra1.5: tarayıcı güvenliği</button>
       </div>
     </div>
   </div>
@@ -232,6 +234,23 @@
           <div class="codebox-head"><span>sinir ağı çıktısı</span></div>
           <pre id="nn-sample"></pre>
         </div>
+      </div>
+
+      <div class="card wide">
+        <div class="card-head">
+          <h3>🎭 Lyra Kişilikleri — meta-öğrenmeli uzman modeller</h3>
+          <div class="btn-row">
+            <button class="btn primary" id="lyra1-btn">⚙️ Lyra-1'i Eğit (Kod &amp; Mat)</button>
+            <button class="btn primary" id="lyra15-btn">📖 Lyra-1.5'i Eğit (Sözcük)</button>
+            <button class="btn ghost" id="lyra-clear-btn">Lyra'ları Sil</button>
+          </div>
+        </div>
+        <p class="muted">Her Lyra bağımsız bir sinir ağıdır ve <strong>nasıl öğreneceğini kendisi seçer</strong>: 4 farklı hiperparametre reçetesini (öğrenme hızı × ağ genişliği) kısa denemelerle eğitir, doğrulama kaybıyla ölçer, kazananla tam eğitim yapar. <strong>Lyra-1</strong> kod+matematik ağırlıklı veri karışımıyla, <strong>Lyra-1.5</strong> sözel/kavramsal karışımla beslenir. Ezber karşıtı: dropout + erken durdurma + her üretimde <strong>özgünlük skoru</strong> (ürettiği kelime dizilimlerinin eğitim verisinde birebir geçmeme oranı). Sohbette <code>lyra1: function</code> veya <code>lyra1.5: yapay zeka</code> yaz.</p>
+        <div class="train-progress">
+          <div class="progress-bar"><div class="progress-fill" id="lyra-fill"></div></div>
+          <span id="lyra-label">Henüz Lyra eğitilmedi</span>
+        </div>
+        <div class="stats-grid nn-grid" id="lyra-stats"></div>
       </div>
 
       <div class="card">
