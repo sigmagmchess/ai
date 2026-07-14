@@ -695,6 +695,69 @@ label.btn { display: inline-block; }
 .kb-item .del:hover { color: var(--danger); }
 .kb-item .btn { padding: 6px 14px; font-size: 12px; }
 
+/* ==================== BİLGİ AĞI ==================== */
+.graph-page { display: flex; flex-direction: column; }
+
+.graph-legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.graph-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+.graph-legend i {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.graph-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 520px;
+  background: rgba(11, 14, 26, 0.5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+#graph-canvas { width: 100%; height: 100%; display: block; cursor: pointer; }
+
+.graph-tip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--surface-solid);
+  border: 1px solid rgba(139, 124, 255, 0.5);
+  border-radius: 11px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  color: var(--text);
+  max-width: 300px;
+  line-height: 1.55;
+  box-shadow: var(--shadow);
+  z-index: 10;
+}
+.graph-tip small { color: var(--muted); display: block; margin-top: 4px; }
+
+/* İlişki çipleri (sohbet cevaplarında) */
+.related-chip {
+  background: rgba(34, 211, 238, 0.07);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  color: var(--accent2);
+  padding: 3px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11.5px;
+  transition: all 0.15s;
+}
+.related-chip:hover { background: rgba(34, 211, 238, 0.16); transform: translateY(-1px); }
+
 /* ==================== TOAST ==================== */
 .toast {
   position: fixed;

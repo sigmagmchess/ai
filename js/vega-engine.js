@@ -383,8 +383,9 @@ const VegaEngine = (() => {
       };
     }
 
-    const related = scored.slice(1, 4).filter(s => s.score > THRESHOLD * 1.5)
-      .map(s => s.doc.title);
+    // İlişkiler sorguya değil, bulunan kaydın KENDİSİNE göre hesaplanır:
+    // doküman vektörleri arası kosinüs — elle yazılmış bağlantı yok
+    const related = relatedDocs(best.doc.id, 3).map(r => r.title);
 
     // Çoklu kaynak birleştirme: ikinci kayıt en iyiye çok yakınsa cevaba ekle
     const second = scored[1];
@@ -418,6 +419,55 @@ const VegaEngine = (() => {
   }
 
   function getMissed() { return state.missed; }
+
+  // ---------- Gerçek anlamsal ilişkiler ----------
+  // İki kaydın ilişkisi = TF-IDF vektörleri arasındaki kosinüs benzerliği.
+  // İlişkiler veriye gömülü değildir; indeksten HESAPLANIR — yeni öğretilen
+  // bilgi bile eğitimden sonra ağa kendiliğinden bağlanır.
+  function relatedDocs(docId, k = 5) {
+    const i = state.docs.findIndex(d => d.id === docId);
+    if (i < 0) return [];
+    const v = state.vectors[i];
+    const scored = [];
+    for (let j = 0; j < state.docs.length; j++) {
+      if (j === i) continue;
+      // Ağırlıkla çarpım: küratörlü (1.0) ve 👍 almış kayıtlar, referans
+      // kayıtlarının (0.85) önüne geçer — sıralama yine hesaplamadır
+      const s = cosine(v, state.vectors[j]) * state.docs[j].weight;
+      if (s > 0.045) {
+        scored.push({ id: state.docs[j].id, title: state.docs[j].title,
+                      cat: state.docs[j].cat, score: s });
+      }
+    }
+    return scored.sort((a, b) => b.score - a.score).slice(0, k);
+  }
+
+  // Kavram düzeyi bilgi grafı: küratörlü kayıtlar düğüm, benzerlik kenar.
+  // Referans kayıtları (12 bin+) hariç tutulur — kavram ağı okunabilir kalsın.
+  function getGraph(minSim = 0.055, maxEdgesPerNode = 3) {
+    const idx = [];
+    state.docs.forEach((d, i) => { if (!d.id.startsWith("ref-")) idx.push(i); });
+    const nodes = idx.map(i => ({
+      id: state.docs[i].id, title: state.docs[i].title,
+      cat: state.docs[i].cat, custom: !!state.docs[i].custom
+    }));
+    // Her düğüm için en güçlü maxEdgesPerNode bağ; yönsüz tekilleştirme
+    const edgeMap = new Map();
+    for (let a = 0; a < idx.length; a++) {
+      const cand = [];
+      for (let b = 0; b < idx.length; b++) {
+        if (a === b) continue;
+        const s = cosine(state.vectors[idx[a]], state.vectors[idx[b]]);
+        if (s >= minSim) cand.push({ b, w: s });
+      }
+      cand.sort((x, y) => y.w - x.w).slice(0, maxEdgesPerNode).forEach(({ b, w }) => {
+        const key = Math.min(a, b) + "-" + Math.max(a, b);
+        const prev = edgeMap.get(key);
+        if (!prev || w > prev.w) edgeMap.set(key, { a: Math.min(a, b), b: Math.max(a, b), w });
+      });
+    }
+    return { nodes, edges: [...edgeMap.values()] };
+  }
 
   function removeMissed(q) {
     state.missed = state.missed.filter(m => m.q !== q);
@@ -579,6 +629,6 @@ const VegaEngine = (() => {
 
   return { load, ask, train, teach, feedback, addDoc, removeDoc,
            factoryReset, exportModel, importModel, getStats, getDocs,
-           getMissed, removeMissed,
+           getMissed, removeMissed, relatedDocs, getGraph,
            completeCode, hashString, persist };
 })();

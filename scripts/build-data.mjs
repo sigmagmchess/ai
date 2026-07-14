@@ -199,17 +199,124 @@ for (const [name, tree] of Object.entries(bcd.html.elements)) {
   });
 }
 
-/* --- HTTP başlıkları --- */
+/* --- HTTP başlıkları (yönergeleriyle) ve metodları --- */
 for (const [name, tree] of Object.entries(bcd.http.headers)) {
+  const c = tree.__compat;
+  if (c) {
+    push({
+      id: `ref-http-${name}`,
+      cat: 'Referans/HTTP',
+      q: `http başlık header ${camelWords(name)}`,
+      title: `HTTP Başlığı: ${name}`,
+      a: [`HTTP başlığı.`, statusLine(c.status), supportLine(c.support), mdnLine(c)],
+      code: `${name}: <değer>`
+    });
+  }
+  for (const [dir, node] of Object.entries(tree)) {
+    if (dir === '__compat' || !node.__compat) continue;
+    const dc = node.__compat;
+    push({
+      id: `ref-http-${name}-${dir}`,
+      cat: 'Referans/HTTP',
+      q: `http başlık header ${camelWords(name)} ${camelWords(dir)} yönerge directive`,
+      title: `HTTP: ${name} → ${dir}`,
+      a: [`${name} başlığının yönergesi/değeri.`, statusLine(dc.status),
+          supportLine(dc.support), mdnLine(dc)]
+    });
+  }
+}
+for (const [name, tree] of Object.entries(bcd.http.methods || {})) {
   const c = tree.__compat;
   if (!c) continue;
   push({
-    id: `ref-http-${name}`,
+    id: `ref-http-method-${name}`,
     cat: 'Referans/HTTP',
-    q: `http başlık header ${camelWords(name)}`,
-    title: `HTTP Başlığı: ${name}`,
-    a: [`HTTP başlığı.`, statusLine(c.status), supportLine(c.support), mdnLine(c)],
-    code: `${name}: <değer>`
+    q: `http metod method istek request ${camelWords(name)}`,
+    title: `HTTP Metodu: ${name}`,
+    a: [`HTTP istek metodu.`, statusLine(c.status), supportLine(c.support), mdnLine(c)],
+    code: `${name} /kaynak HTTP/1.1`
+  });
+}
+
+/* --- HTML element öznitelikleri + global öznitelikler --- */
+for (const [elem, tree] of Object.entries(bcd.html.elements)) {
+  for (const [attr, node] of Object.entries(tree)) {
+    if (attr === '__compat' || !node.__compat) continue;
+    const c = node.__compat;
+    push({
+      id: `ref-html-${elem}-${attr}`,
+      cat: 'Referans/HTML',
+      q: `html ${elem} ${camelWords(attr)} öznitelik attribute`,
+      title: `HTML: <${elem}> özniteliği: ${attr}`,
+      a: [`<${elem}> elemanının özniteliği.`, statusLine(c.status),
+          supportLine(c.support), mdnLine(c)],
+      code: `<${elem} ${attr}="…">`
+    });
+  }
+}
+for (const [attr, tree] of Object.entries(bcd.html.global_attributes || {})) {
+  const c = tree.__compat;
+  if (!c) continue;
+  push({
+    id: `ref-html-global-${attr}`,
+    cat: 'Referans/HTML',
+    q: `html global öznitelik attribute ${camelWords(attr)}`,
+    title: `HTML Global Öznitelik: ${attr}`,
+    a: [`Tüm HTML elemanlarında kullanılabilen global öznitelik.`,
+        statusLine(c.status), supportLine(c.support), mdnLine(c)],
+    code: `<div ${attr}="…">`
+  });
+}
+
+/* --- CSS özellik değerleri (alt özellikler) ve veri türleri --- */
+for (const [prop, tree] of Object.entries(bcd.css.properties)) {
+  for (const [val, node] of Object.entries(tree)) {
+    if (val === '__compat' || !node.__compat) continue;
+    const c = node.__compat;
+    push({
+      id: `ref-cssv-${prop}-${val}`,
+      cat: 'Referans/CSS',
+      q: `css ${prop.split('-').join(' ')} ${camelWords(val)} değer value`,
+      title: `CSS: ${prop} değeri: ${val}`,
+      a: [`${prop} özelliğinin değeri/alt özelliği.`, statusLine(c.status),
+          supportLine(c.support), mdnLine(c)]
+    });
+  }
+}
+for (const [name, tree] of Object.entries(bcd.css.types || {})) {
+  const c = tree.__compat;
+  if (!c) continue;
+  push({
+    id: `ref-csst-${name}`,
+    cat: 'Referans/CSS',
+    q: `css veri türü tip type fonksiyon ${camelWords(name)}`,
+    title: `CSS Veri Türü: <${name}>`,
+    a: [`CSS veri türü / fonksiyonel gösterim.`, statusLine(c.status),
+        supportLine(c.support), mdnLine(c)]
+  });
+}
+
+/* --- SVG öznitelikleri + WebAssembly API --- */
+for (const [attr, tree] of Object.entries(bcd.svg.global_attributes || {})) {
+  const c = tree.__compat;
+  if (!c) continue;
+  push({
+    id: `ref-svga-${attr}`,
+    cat: 'Referans/SVG',
+    q: `svg öznitelik attribute ${camelWords(attr)}`,
+    title: `SVG Özniteliği: ${attr}`,
+    a: [`SVG global özniteliği.`, statusLine(c.status), supportLine(c.support), mdnLine(c)]
+  });
+}
+for (const [name, tree] of Object.entries(bcd.webassembly?.api || {})) {
+  const c = tree.__compat;
+  if (!c) continue;
+  push({
+    id: `ref-wasm-${name}`,
+    cat: 'Referans/WebAssembly',
+    q: `webassembly wasm ${camelWords(name)} api`,
+    title: `WebAssembly: ${name}`,
+    a: [`WebAssembly API özelliği.`, statusLine(c.status), supportLine(c.support), mdnLine(c)]
   });
 }
 
@@ -235,7 +342,12 @@ const sources = [
   ['three.js 0.160.1 (MIT)', `${DL}/three-0.160.1/build/three.module.js`],
   ['react-dom 18.3.1 (MIT)', `${DL}/react-dom-18.3.1/cjs/react-dom.development.js`],
   ['moment 2.30.1 (MIT)', `${DL}/moment-2.30.1/moment.js`],
-  ['jquery 3.7.1 (MIT)', `${DL}/jquery-3.7.1/dist/jquery.js`]
+  ['jquery 3.7.1 (MIT)', `${DL}/jquery-3.7.1/dist/jquery.js`],
+  ['rxjs 7.8.1 (Apache-2.0)', `${DL}/rxjs-7.8.1/dist/bundles/rxjs.umd.js`],
+  ['handlebars 4.7.8 (MIT)', `${DL}/handlebars-4.7.8/dist/handlebars.js`],
+  ['luxon 3.5.0 (MIT)', `${DL}/luxon-3.5.0/build/global/luxon.js`],
+  ['underscore 1.13.7 (MIT)', `${DL}/underscore-1.13.7/underscore.js`],
+  ['backbone 1.6.0 (MIT)', `${DL}/backbone-1.6.0/backbone.js`]
 ];
 // express: lib altındaki tüm .js dosyaları
 function walk(dir) {
@@ -248,7 +360,7 @@ walk(`${DL}/express-4.21.2/lib`).forEach(p => sources.push(['express 4.21.2 (MIT
 
 const seen = new Set();
 const lines = [];
-let budget = 3.1e6; // ~3 MB hedef
+let budget = 4.6e6; // ~4.5 MB hedef
 const perSource = {};
 
 for (const [label, file] of sources) {

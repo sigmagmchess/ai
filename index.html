@@ -33,6 +33,9 @@
     <button class="tab" data-tab="music">
       <span class="tab-ico">🎵</span><span class="tab-label">Müzik</span>
     </button>
+    <button class="tab" data-tab="graph">
+      <span class="tab-ico">🕸️</span><span class="tab-label">Bilgi Ağı</span>
+    </button>
     <button class="tab" data-tab="wiki">
       <span class="tab-ico">📚</span><span class="tab-label">Wiki</span>
     </button>
@@ -145,6 +148,21 @@
     <div class="music-viz card">
       <div class="music-info" id="music-info">Henüz beste yok — bir betimleme gir ya da yukarıdan hazır bir tarif seç.</div>
       <div class="bars" id="viz-bars"></div>
+    </div>
+  </div>
+</section>
+
+<!-- BİLGİ AĞI -->
+<section class="panel" id="panel-graph">
+  <div class="page graph-page">
+    <header class="page-head">
+      <h2>🕸️ Bilgi Ağı</h2>
+      <p>Vega'nın kavramlar arasında kurduğu <strong>gerçek</strong> ilişkiler — kenarlar elle yazılmadı, TF-IDF vektör uzayındaki kosinüs benzerliğinden hesaplanıyor. Öğrettiğin bilgiler de ağa kendiliğinden bağlanır. Bir düğüme tıkla, Vega'ya sor.</p>
+    </header>
+    <div class="graph-legend" id="graph-legend"></div>
+    <div class="graph-wrap">
+      <canvas id="graph-canvas"></canvas>
+      <div class="graph-tip" id="graph-tip" hidden></div>
     </div>
   </div>
 </section>

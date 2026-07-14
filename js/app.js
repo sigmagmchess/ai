@@ -96,6 +96,7 @@ function initTabs() {
     btn.classList.add("active");
     $("#panel-" + btn.dataset.tab).classList.add("active");
     if (btn.dataset.tab === "admin") refreshAdmin();
+    if (btn.dataset.tab === "graph") buildGraphView();
   });
 }
 
@@ -121,13 +122,20 @@ function initChat() {
     respond(chip.textContent);
   });
 
-  // Hero kartları: örnek istekleri başlatır
+  // Hero kartları ve ilişki çipleri: soruyu başlatır
   win.addEventListener("click", e => {
-    const card = e.target.closest(".hero-card");
-    if (!card) return;
-    addUserMsg(card.dataset.q);
-    respond(card.dataset.q);
+    const trigger = e.target.closest(".hero-card, .related-chip");
+    if (!trigger) return;
+    addUserMsg(trigger.dataset.q);
+    respond(trigger.dataset.q);
   });
+
+  // Bilgi ağından gelen sorular için dışa açık köprü
+  window.__vegaAsk = q => {
+    document.querySelector('.tab[data-tab="chat"]').click();
+    addUserMsg(q);
+    respond(q);
+  };
 
   function hideHero() {
     const hero = $("#chat-hero");
@@ -176,7 +184,10 @@ function initChat() {
           <button class="fb-btn" data-doc="${res.docId}" data-fb="0" title="Kötü cevap — ağırlığı azalt">👎</button>
         </div>`;
         if (res.related && res.related.length) {
-          meta += `<div class="meta-row"><span class="confidence">İlgili: ${res.related.map(escapeHtml).join(" · ")}</span></div>`;
+          meta += `<div class="meta-row"><span class="confidence">İlgili</span>${
+            res.related.map(t =>
+              `<button class="related-chip" data-q="${escapeHtml(t)}">${escapeHtml(t)}</button>`
+            ).join("")}</div>`;
         }
       }
 
@@ -342,6 +353,172 @@ function initMusicStudio() {
       dlBtn.textContent = "WAV İndir";
     }
   });
+}
+
+/* ==================== BİLGİ AĞI ==================== */
+// Kategori aileleri: sabit sırada renk ataması (dataviz kuralı — döngüsel değil)
+const GRAPH_FAMILIES = [
+  ["Diller",        ["JavaScript", "TypeScript", "Python"],                       "#8b7cff"],
+  ["Frontend",      ["React", "CSS", "HTML", "Web"],                              "#22d3ee"],
+  ["Backend",       ["Node.js", "Backend", "Veritabanı", "Ağ", "DevOps", "Linux"],"#34d399"],
+  ["Algoritma",     ["Algoritmalar", "Veri Yapıları", "Kavramlar"],               "#fbbf24"],
+  ["Yapay Zekâ",    ["Yapay Zeka"],                                               "#f472b6"],
+  ["Güvenlik",      ["Güvenlik"],                                                 "#fb7185"],
+  ["Araçlar",       ["Git", "Araçlar", "Tasarım"],                                "#60a5fa"],
+  ["Öğretilen",     ["Öğretilen"],                                                "#a3e635"]
+];
+function familyOf(cat) {
+  for (const [name, cats, color] of GRAPH_FAMILIES) {
+    if (cats.includes(cat)) return { name, color };
+  }
+  return { name: "Diğer", color: "#8a92b2" };
+}
+
+function buildGraphView() {
+  const canvas = $("#graph-canvas");
+  const wrap = canvas.parentElement;
+  const tip = $("#graph-tip");
+  const ctx = canvas.getContext("2d");
+
+  // Graf her açılışta motordan taze hesaplanır — öğretilenler dahil olsun
+  const { nodes, edges } = VegaEngine.getGraph();
+  canvas.__nodes = nodes;   // testler ve hata ayıklama için
+
+  const W = canvas.width = wrap.clientWidth;
+  const H = canvas.height = Math.max(520, wrap.clientHeight);
+
+  // Başlangıç konumları: kategori ailesine göre kümelenmiş halka
+  const famAngles = new Map();
+  GRAPH_FAMILIES.forEach(([name], i) =>
+    famAngles.set(name, (i / GRAPH_FAMILIES.length) * Math.PI * 2));
+  nodes.forEach((n, i) => {
+    const fam = familyOf(n.cat);
+    const ang = (famAngles.get(fam.name) ?? 0) + (Math.sin(i * 7.13) * 0.55);
+    const r = Math.min(W, H) * (0.22 + 0.14 * Math.abs(Math.cos(i * 3.7)));
+    n.x = W / 2 + Math.cos(ang) * r;
+    n.y = H / 2 + Math.sin(ang) * r;
+    n.vx = 0; n.vy = 0;
+    n.color = fam.color;
+    n.deg = 0;
+  });
+  edges.forEach(e => { nodes[e.a].deg++; nodes[e.b].deg++; });
+
+  // Kuvvet yönelimli yerleşim (önceden hesaplanır, sonra çizilir)
+  for (let iter = 0; iter < 260; iter++) {
+    const cool = 1 - iter / 260;
+    // itme
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dx = nodes[j].x - nodes[i].x, dy = nodes[j].y - nodes[i].y;
+        const d2 = Math.max(60, dx * dx + dy * dy);
+        const f = 2600 / d2 * cool;
+        const d = Math.sqrt(d2);
+        nodes[i].vx -= dx / d * f; nodes[i].vy -= dy / d * f;
+        nodes[j].vx += dx / d * f; nodes[j].vy += dy / d * f;
+      }
+    }
+    // çekme (kenar yayları — benzerlik güçlüyse yay kısalır)
+    edges.forEach(e => {
+      const A = nodes[e.a], B = nodes[e.b];
+      const dx = B.x - A.x, dy = B.y - A.y;
+      const d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+      const target = 120 - e.w * 160;
+      const f = (d - Math.max(46, target)) * 0.012 * cool;
+      A.vx += dx / d * f * d * 0.01; A.vy += dy / d * f * d * 0.01;
+      B.vx -= dx / d * f * d * 0.01; B.vy -= dy / d * f * d * 0.01;
+    });
+    // merkeze hafif çekim + uygula
+    nodes.forEach(n => {
+      n.vx += (W / 2 - n.x) * 0.002 * cool;
+      n.vy += (H / 2 - n.y) * 0.002 * cool;
+      n.x += Math.max(-9, Math.min(9, n.vx));
+      n.y += Math.max(-9, Math.min(9, n.vy));
+      n.vx *= 0.72; n.vy *= 0.72;
+      n.x = Math.max(28, Math.min(W - 28, n.x));
+      n.y = Math.max(28, Math.min(H - 28, n.y));
+    });
+  }
+
+  let hover = null;
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // kenarlar — ağırlık şeffaflığa yansır
+    edges.forEach(e => {
+      const A = nodes[e.a], B = nodes[e.b];
+      const active = hover && (A === hover || B === hover);
+      ctx.strokeStyle = active
+        ? "rgba(139, 124, 255, 0.85)"
+        : `rgba(138, 146, 178, ${0.10 + e.w * 0.5})`;
+      ctx.lineWidth = active ? 1.6 : 1;
+      ctx.beginPath();
+      ctx.moveTo(A.x, A.y);
+      ctx.lineTo(B.x, B.y);
+      ctx.stroke();
+    });
+    // düğümler — derece boyuta yansır
+    nodes.forEach(n => {
+      const r = 4.5 + Math.min(6, n.deg * 0.9);
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n === hover ? r + 2.5 : r, 0, 7);
+      ctx.fillStyle = n.color;
+      ctx.fill();
+      // 2px yüzey halkası — üst üste binen işaretler ayrışsın
+      ctx.strokeStyle = "#0b0e1a";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (n.custom) {            // öğretilen bilgi: kesikli hale
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 5, 0, 7);
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = n.color;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    });
+  }
+  draw();
+
+  function nodeAt(mx, my) {
+    let best = null, bestD = 18 * 18;
+    for (const n of nodes) {
+      const d = (n.x - mx) ** 2 + (n.y - my) ** 2;
+      if (d < bestD) { bestD = d; best = n; }
+    }
+    return best;
+  }
+
+  canvas.onmousemove = e => {
+    const rect = canvas.getBoundingClientRect();
+    const n = nodeAt(e.clientX - rect.left, e.clientY - rect.top);
+    if (n !== hover) {
+      hover = n;
+      draw();
+      if (n) {
+        const rel = VegaEngine.relatedDocs(n.id, 3);
+        tip.innerHTML = `<strong>${n.title}</strong><small>${n.cat}${
+          n.custom ? " · senin öğrettiğin" : ""}</small>` + (rel.length
+          ? `<small>En güçlü bağlar: ${rel.map(r =>
+              `${r.title} (%${Math.round(r.score * 100)})`).join(" · ")}</small>` : "");
+        tip.hidden = false;
+        tip.style.left = Math.min(n.x + 16, W - 320) + "px";
+        tip.style.top = Math.max(8, n.y - 20) + "px";
+      } else {
+        tip.hidden = true;
+      }
+    }
+  };
+  canvas.onmouseleave = () => { hover = null; tip.hidden = true; draw(); };
+  canvas.onclick = e => {
+    const rect = canvas.getBoundingClientRect();
+    const n = nodeAt(e.clientX - rect.left, e.clientY - rect.top);
+    if (n && window.__vegaAsk) window.__vegaAsk(n.title);
+  };
+
+  // Lejant
+  $("#graph-legend").innerHTML = GRAPH_FAMILIES.map(([name, , color]) =>
+    `<span><i style="background:${color}"></i>${name}</span>`).join("");
 }
 
 /* ==================== WIKI ==================== */
