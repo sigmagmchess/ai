@@ -186,7 +186,7 @@ const VegaEngine = (() => {
     return acc;
   }
 
-  function queryVector(text) {
+  function queryVector(text, report = null) {
     const tf = new Map();
     const raw = tokenize(text);
 
@@ -197,7 +197,10 @@ const VegaEngine = (() => {
     raw.forEach(tok => {
       (SYNONYMS[tok] || []).forEach(syn => {
         const s = stem(syn.toLocaleLowerCase("tr"));
-        if (!tf.has(s)) tf.set(s, 0.7);
+        if (!tf.has(s)) {
+          tf.set(s, 0.7);
+          if (report) report.syn.push(`${tok}→${syn}`);
+        }
       });
     });
 
@@ -205,7 +208,10 @@ const VegaEngine = (() => {
     raw.map(stem).forEach(t => {
       if (state.idf[t] == null) {
         const near = fuzzyMatch(t);
-        if (near && !tf.has(near)) tf.set(near, 0.8);
+        if (near && !tf.has(near)) {
+          tf.set(near, 0.8);
+          if (report) report.fuzzy.push(`${t}→${near}`);
+        }
       }
     });
     const vec = new Map();
@@ -486,52 +492,124 @@ const VegaEngine = (() => {
       return famCache.get(cat);
     }
 
-    // Konuşma bağlamı: kısa/işaret zamirli takip soruları önceki konunun
-    // terimleriyle zenginleştirilir — "peki örneği?" gibi sorular çalışır
-    const qv = queryVector(text);
-    const isFollowup = tokenize(text).length <= 2 ||
-      /^(peki|ya\b|bunun|onun|örne|neden|avantaj|dezavantaj|farkı|daha)/i
-        .test(text.trim().toLocaleLowerCase("tr"));
-    if (isFollowup && state.lastContext) {
-      state.lastContext.forEach(t => {
-        if (!qv.has(t)) qv.set(t, 0.5);
-      });
-    }
-
-    // BM25 sıralama, ters indeks üzerinden (+ nöral niyet desteği)
-    const acc = bm25Acc(qv);
-    const scored = [];
-    acc.forEach((s0, i) => {
-      const d = state.docs[i];
-      let s = s0 * d.weight;
-      if (intent && intent.conf > 0.4 && famOf(d.cat) === intent.label) {
-        s *= 1 + 0.3 * intent.conf;
-      }
-      scored.push({ doc: d, score: s });
-    });
-    scored.sort((a, b) => b.score - a.score);
-
-    const best = scored[0];
-    // BM25 skoru sınırsızdır; [0,1) aralığına bastırılır
+    // ==================== DÜŞÜNME SÜRECİ ====================
+    // Aşağıdaki izlerin (trace) hepsi GERÇEK hesaplama adımlarıdır —
+    // arayüz bunları cevaptan önce "düşünme" olarak gösterir.
+    const trace = [];
     const squash = s => s / (s + 8);
 
-    // Kapsama: kullanıcının ÖZGÜN terimlerinin (eşanlamlı/fuzzy genişletme
-    // hariç) kaçı en iyi belgede geçiyor? Düşük kapsama = zayıf eşleşme —
-    // tek bir ortak kelimeyle gelen yanlış-pozitifleri keser
-    let coverage = 1;
-    if (best) {
-      const origTerms = [...new Set(tokenize(text).map(stem))];
-      if (origTerms.length > 0) {
-        const bi = state.docs.indexOf(best.doc);
-        const tf = state.tfs[bi];
-        const hit = origTerms.filter(t => tf.has(t)).length;
-        coverage = hit / origTerms.length;
+    const rawTokens = tokenize(text);
+    trace.push(`Soruyu çözümledim: ${rawTokens.length} anlamlı terim [${rawTokens.slice(0, 6).join(", ")}${rawTokens.length > 6 ? "…" : ""}]`);
+    if (intent) {
+      trace.push(`Nöral niyet ağım "${intent.label}" diyor (%${Math.round(intent.conf * 100)} güven) — bu ailedeki kayıtlara öncelik vereceğim`);
+    }
+
+    function rankFor(qtext, useContext) {
+      const report = { syn: [], fuzzy: [] };
+      const qv = queryVector(qtext, report);
+      if (useContext) {
+        const isFollowup = tokenize(qtext).length <= 2 ||
+          /^(peki|ya\b|bunun|onun|örne|neden|avantaj|dezavantaj|farkı|daha)/i
+            .test(qtext.trim().toLocaleLowerCase("tr"));
+        if (isFollowup && state.lastContext) {
+          state.lastContext.forEach(t => { if (!qv.has(t)) qv.set(t, 0.5); });
+          trace.push(`Kısa/takip sorusu — önceki konunun bağlamını (${state.lastContext.slice(0, 4).join(", ")}…) hesaba katıyorum`);
+        }
+      }
+      if (report.syn.length) trace.push(`Eşanlamlı genişletme: ${report.syn.slice(0, 3).join(", ")}`);
+      if (report.fuzzy.length) trace.push(`Yazım düzeltme: ${report.fuzzy.slice(0, 3).join(", ")}`);
+
+      const acc = bm25Acc(qv);
+      const scored = [];
+      acc.forEach((s0, i) => {
+        const d = state.docs[i];
+        let s = s0 * d.weight;
+        if (intent && intent.conf > 0.4 && famOf(d.cat) === intent.label) {
+          s *= 1 + 0.3 * intent.conf;
+        }
+        scored.push({ doc: d, score: s });
+      });
+      scored.sort((a, b) => b.score - a.score);
+
+      let coverage = 1;
+      if (scored[0]) {
+        const origTerms = [...new Set(tokenize(qtext).map(stem))];
+        if (origTerms.length > 0) {
+          const bi = state.docs.indexOf(scored[0].doc);
+          const hit = origTerms.filter(t => state.tfs[bi].has(t)).length;
+          coverage = hit / origTerms.length;
+        }
+      }
+      const conf = scored[0] ? squash(scored[0].score) * (0.55 + 0.45 * coverage) : 0;
+      return { scored, coverage, conf, candidates: acc.size };
+    }
+
+    let { scored, coverage, conf, candidates } = rankFor(text, true);
+    trace.push(`Ters indeksten ${candidates.toLocaleString("tr-TR")} aday belge taradım`);
+    if (scored.length) {
+      trace.push(`En güçlü adaylar: ${scored.slice(0, 3)
+        .map(s => `"${s.doc.title}" (${s.score.toFixed(1)})`).join(" · ")}`);
+    }
+
+    // KENDİNİ KONTROL: en iyi aday, nöral niyetle çelişiyorsa ve niyetle
+    // uyumlu yakın bir 2. aday varsa fikrimi değiştiririm
+    if (intent && intent.conf > 0.55 && scored.length > 1) {
+      const bestFam = famOf(scored[0].doc.cat);
+      if (bestFam && bestFam !== intent.label) {
+        const alt = scored.slice(1, 4).find(s =>
+          famOf(s.doc.cat) === intent.label && s.score >= scored[0].score * 0.8);
+        if (alt) {
+          trace.push(`Kendimi kontrol ettim: 1. aday "${scored[0].doc.title}" ${bestFam} ailesinden ama niyet ${intent.label} — niyetle uyumlu ve yakın skorlu "${alt.doc.title}" adayına geçiyorum`);
+          scored = [alt, ...scored.filter(s => s !== alt)];
+        } else {
+          trace.push(`Kendimi kontrol ettim: 1. aday niyetle tam örtüşmüyor ama daha iyi alternatif yok — kararımda kalıyorum`);
+        }
       }
     }
-    const conf = best ? squash(best.score) * (0.55 + 0.45 * coverage) : 0;
+
+    // ÇOK ADIMLI MUHAKEME: "X ile Y farkı" — tek kayıt yeterince güçlü
+    // değilse iki ayrı arama yapıp cevabı kendim birleştiririm
+    const cmp = text.match(/^(.{2,40}?)\s+(?:ile|vs\.?)\s+(.{2,40}?)\s*(?:arasındaki\s+)?(?:farkı?|farkları|karşılaştır\w*)\s*(?:nedir|ne|\?)?\s*$/i);
+    // Tek kayıt ancak BAŞLIĞI her iki tarafı da içeriyorsa yeterlidir
+    // (gerçek karşılaştırma kaydı, ör. "TCP vs UDP"); yoksa iki ayrı arama
+    let titleCoversBoth = false;
+    if (cmp && scored[0]) {
+      const tl = scored[0].doc.title.toLocaleLowerCase("tr");
+      const aStems = tokenize(cmp[1]).map(stem), bStems = tokenize(cmp[2]).map(stem);
+      titleCoversBoth =
+        aStems.some(t => tl.includes(t)) && bStems.some(t => tl.includes(t));
+    }
+    if (cmp && !titleCoversBoth) {
+      const [, aTxt, bTxt] = cmp;
+      trace.push(`Karşılaştırma sorusu algıladım: "${aTxt.trim()}" ↔ "${bTxt.trim()}" — tek bir karşılaştırma kaydım yok, iki ayrı arama yapıp kendim birleştireceğim`);
+      const rA = rankFor(aTxt, false), rB = rankFor(bTxt, false);
+      const dA = rA.scored[0], dB = rB.scored[0];
+      if (dA && dB && dA.doc.id !== dB.doc.id &&
+          squash(dA.score) > 0.28 && squash(dB.score) > 0.28) {
+        trace.push(`İki tarafı da buldum: "${dA.doc.title}" ve "${dB.doc.title}" — cevabı birleştiriyorum`);
+        state.lastContext = terms(text).slice(0, 12);
+        return {
+          type: "answer",
+          text: `**Karşılaştırma: ${dA.doc.title} ↔ ${dB.doc.title}**\n\n` +
+                `**1) ${dA.doc.title}**\n${dA.doc.a}\n\n**2) ${dB.doc.title}**\n${dB.doc.a}`,
+          code: dA.doc.code || dB.doc.code || null,
+          docId: dA.doc.id,
+          confidence: Math.min(0.99, (squash(dA.score) + squash(dB.score)) / 2 + 0.15),
+          category: `${dA.doc.cat} + ${dB.doc.cat}`,
+          intent: intent ? { label: intent.label, conf: intent.conf } : null,
+          related: relatedDocs(dA.doc.id, 2).map(r => r.title),
+          trace
+        };
+      }
+      trace.push(`İki taraf ayrı ayrı yeterince netleşmedi — normal akışa dönüyorum`);
+    }
+
+    const best = scored[0];
     const THRESHOLD = 0.30;
+    trace.push(`Kapsama kontrolü: sorunun özgün terimlerinin %${Math.round(coverage * 100)}'i en iyi kayıtta geçiyor · güven ${conf.toFixed(2)} (eşik ${THRESHOLD})`);
 
     if (!best || conf < THRESHOLD || coverage < 0.3) {
+      trace.push(`Karar: eşleşme eşiğin altında — uydurmak yerine bilmediğimi söyleyeceğim ve soruyu öğrenme kuyruğuma yazacağım`);
       logMissed(text);
       const suggestions = scored.slice(0, 3).filter(s => squash(s.score) > 0.12)
         .map(s => `• ${s.doc.title}`).join("\n");
@@ -541,9 +619,11 @@ const VegaEngine = (() => {
         text: base + `\n\nBu soruyu **öğrenme kuyruğuma** kaydettim (Admin > Öğrenme Kuyruğu).` + (suggestions
           ? `\n\nEn yakın bildiğim konular:\n${suggestions}\n\nBana bu konuyu \`öğret: soru => cevap\` biçiminde öğretebilirsin — bir daha unutmam.`
           : `\n\nBana \`öğret: soru => cevap\` yazarak öğretebilirsin.`),
-        docId: null
+        docId: null,
+        trace
       };
     }
+    trace.push(`Karar: "${best.doc.title}" kaydıyla cevaplıyorum`);
 
     // İlişkiler sorguya değil, bulunan kaydın KENDİSİNE göre hesaplanır:
     // doküman vektörleri arası kosinüs — elle yazılmış bağlantı yok
@@ -571,7 +651,8 @@ const VegaEngine = (() => {
       confidence: Math.min(0.99, conf * 1.15),
       category: best.doc.cat,
       intent: intent ? { label: intent.label, conf: intent.conf } : null,
-      related
+      related,
+      trace
     };
   }
 

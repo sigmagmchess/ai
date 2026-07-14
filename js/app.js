@@ -448,21 +448,50 @@ function initChat() {
   }
 
   function respond(text) {
-    // Yazıyor animasyonu
-    const typing = document.createElement("div");
-    typing.className = "msg vega";
-    typing.innerHTML = `<div class="avatar">V</div>
-      <div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div>`;
-    win.appendChild(typing);
+    // Düşünme baloncuğu: motorun GERÇEK hesaplama adımları cevaptan önce
+    // tek tek gösterilir (içerik gerçek, akış hızı sunumsaldır)
+    const thinking = document.createElement("div");
+    thinking.className = "msg vega";
+    thinking.innerHTML = `<div class="avatar">V</div>
+      <div class="bubble"><div class="think-live" id="think-live">
+        <div class="think-head">🧠 düşünüyor…</div></div></div>`;
+    win.appendChild(thinking);
     win.scrollTop = win.scrollHeight;
     setStatus("Düşünüyor…", true);
 
-    setTimeout(() => {
-      const res = VegaEngine.ask(text);
-      typing.remove();
+    // Cevap hemen hesaplanır; izler sırayla görünür
+    const res = VegaEngine.ask(text);
+    const steps = res.trace || [];
+    const liveBox = thinking.querySelector(".think-live");
+    let i = 0;
+
+    function revealNext() {
+      if (i < steps.length) {
+        const div = document.createElement("div");
+        div.className = "think-step";
+        div.textContent = steps[i];
+        liveBox.appendChild(div);
+        win.scrollTop = win.scrollHeight;
+        i++;
+        setTimeout(revealNext, 90 + Math.random() * 140);
+      } else {
+        setTimeout(showAnswer, 160);
+      }
+    }
+    setTimeout(revealNext, steps.length ? 220 : 420 + Math.random() * 300);
+
+    function showAnswer() {
+      thinking.remove();
       setStatus("Model hazır", false);
 
-      let inner = `<p>${md(res.text)}</p>`;
+      // Düşünme izi cevapta katlanabilir blok olarak saklanır
+      const thinkBlock = steps.length
+        ? `<details class="think-details"><summary>🧠 ${steps.length} düşünme adımı</summary>${
+            steps.map(s => `<div class="think-step">${escapeHtml(s)}</div>`).join("")
+          }</details>`
+        : "";
+
+      let inner = thinkBlock + `<p>${md(res.text)}</p>`;
       if (res.code) {
         inner += `<div class="codebox">
           <div class="codebox-head"><span>kod</span><button class="copy-btn">Kopyala</button></div>
@@ -495,7 +524,7 @@ function initChat() {
           <div class="bubble">${inner}${meta}</div>
         </div>`);
       win.scrollTop = win.scrollHeight;
-    }, 420 + Math.random() * 500);
+    }
   }
 
   // Kod kopyalama
