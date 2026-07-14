@@ -21,10 +21,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
 /* ==================== NÖRAL ÇEKİRDEK (gerçek ML) ==================== */
 function initNeural() {
-  // Kaydedilmiş sinir ağı varsa yükle
-  if (VegaML.loadCodeNet()) {
+  // Kaydedilmiş sinir ağları varsa yükle
+  const hadCode = VegaML.loadCodeNet();
+  const hadWord = VegaML.loadWordNet();
+  if (hadCode || hadWord) {
     $("#nn-label").textContent =
-      "Kaydedilmiş sinir ağı ağırlıkları yüklendi — sohbette \"üret: function \" hazır. Yeniden eğitmek istersen butona bas.";
+      `Kaydedilmiş ağırlıklar yüklendi (${[hadCode && "kod ağı", hadWord && "kelime ağı"]
+        .filter(Boolean).join(" + ")}) — sohbette "üret:" / "kelime:" hazır.`;
     $("#nn-fill").style.width = "100%";
   }
 
@@ -71,16 +74,56 @@ function initNeural() {
     toast("Sinir ağı eğitildi 🧬");
   });
 
+  $("#nnw-train-btn").addEventListener("click", async () => {
+    const btn = $("#nnw-train-btn");
+    btn.disabled = true;
+    setStatus("Kelime ağı eğitiliyor…", true);
+    // Eğitim verisi: bilgi tabanının Türkçe metinleri + wiki sayfaları
+    const texts = VegaEngine.getDocs()
+      .filter(d => !d.id.startsWith("ref-"))
+      .map(d => d.title + ". " + d.a);
+    if (typeof VEGA_WIKI !== "undefined") {
+      VEGA_WIKI.forEach(w => texts.push(w.body.replace(/[*`#>]/g, " ")));
+    }
+    const t0 = performance.now();
+    await VegaML.trainWordNet(texts, {
+      steps: 500,
+      onProgress: (s, total, loss, val) => {
+        $("#nn-label").textContent =
+          `Kelime ağı — adım ${s}/${total} · eğitim kaybı ${loss.toFixed(3)} · doğrulama ${val.toFixed(3)}`;
+        $("#nn-fill").style.width = Math.round(s / total * 100) + "%";
+        drawNeuralChart(VegaML.info().wordHistory);
+      }
+    });
+    const sec = ((performance.now() - t0) / 1000).toFixed(1);
+    const saved = VegaML.saveWordNet();
+    $("#nn-label").textContent =
+      `Kelime ağı eğitildi (${sec} sn) · ${saved ? "ağırlıklar kaydedildi" : "kaydetme başarısız (kota)"} · sohbette "kelime: yapay zeka" dene`;
+    setStatus("Model hazır", false);
+    btn.disabled = false;
+    renderNeuralCard();
+    toast("Kelime ağı eğitildi 📝");
+  });
+
   $("#nn-sample-btn").addEventListener("click", () => {
     const info = VegaML.info();
-    if (!info.codeReady) { toast("Önce sinir ağını eğit"); return; }
-    const out = VegaML.generate("function ", 130, 0.75, Date.now() % 100000);
-    $("#nn-sample").textContent = out;
+    if (!info.codeReady && !info.wordReady) { toast("Önce bir ağı eğit"); return; }
+    const parts = [];
+    if (info.codeReady) {
+      parts.push("── kod ağı ──\n" +
+        VegaML.generate("function ", 130, 0.75, Date.now() % 100000));
+    }
+    if (info.wordReady) {
+      parts.push("── kelime ağı ──\n" +
+        VegaML.generateWords("yapay zeka", 36, 0.85, Date.now() % 100000));
+    }
+    $("#nn-sample").textContent = parts.join("\n\n");
     $("#nn-sample").parentElement.hidden = false;
   });
 
   $("#nn-clear-btn").addEventListener("click", () => {
     VegaML.clearCodeNet();
+    VegaML.clearWordNet();
     renderNeuralCard();
     toast("Sinir ağı ağırlıkları silindi");
   });
@@ -94,19 +137,25 @@ function renderNeuralCard() {
     <div class="stat"><div class="val">${i.intentParams.toLocaleString("tr-TR")}</div>
       <div class="lbl">Niyet ağı parametresi</div></div>
     <div class="stat"><div class="val">${i.codeReady ? i.codeParams.toLocaleString("tr-TR") : "—"}</div>
-      <div class="lbl">Karakter ağı parametresi</div></div>
+      <div class="lbl">Kod ağı parametresi</div></div>
     <div class="stat"><div class="val">${i.codeReady ? (i.codeTrainedChars / 1000).toFixed(0) + "k" : "—"}</div>
-      <div class="lbl">Eğitim karakteri</div></div>`;
+      <div class="lbl">Eğitim karakteri</div></div>
+    <div class="stat"><div class="val">${i.wordReady ? i.wordParams.toLocaleString("tr-TR") : "—"}</div>
+      <div class="lbl">Kelime ağı parametresi</div></div>
+    <div class="stat"><div class="val">${i.wordReady ? (i.wordTrainedWords / 1000).toFixed(1) + "k / " + i.wordVocab : "—"}</div>
+      <div class="lbl">Eğitim kelimesi / sözlük</div></div>`;
   drawNeuralChart();
 }
 
-function drawNeuralChart() {
+function drawNeuralChart(histArg) {
   const canvas = $("#nn-chart");
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
-  const hist = VegaML.info().codeHistory;
+  const info = VegaML.info();
+  const hist = histArg ||
+    (info.codeHistory && info.codeHistory.length >= 2 ? info.codeHistory : info.wordHistory);
   const INK_MUTED = "#8a92b2", GRID = "rgba(138,146,178,0.14)";
 
   if (!hist || hist.length < 2) {

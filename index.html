@@ -97,6 +97,7 @@
         <button class="chip">flexbox ile ortalama</button>
         <button class="chip">sql injection korunma</button>
         <button class="chip">transformer nedir?</button>
+        <button class="chip">kelime: yapay zeka</button>
       </div>
     </div>
   </div>
@@ -212,12 +213,13 @@
         <div class="card-head">
           <h3>🧬 Nöral Çekirdek — gerçek makine öğrenmesi</h3>
           <div class="btn-row">
-            <button class="btn primary" id="nn-train-btn">🧠 Sinir Ağını Eğit</button>
+            <button class="btn primary" id="nn-train-btn">🧠 Kod Ağını Eğit</button>
+            <button class="btn primary" id="nnw-train-btn">📝 Kelime Ağını Eğit</button>
             <button class="btn ghost" id="nn-sample-btn">Örnek Üret</button>
             <button class="btn ghost" id="nn-clear-btn">Ağırlıkları Sil</button>
           </div>
         </div>
-        <p class="muted">İki gerçek sinir ağı, tarayıcında <strong>gerçek geri yayılım + Adam optimizer</strong> ile eğitilir — kütüphane yok, her gradyan elle hesaplanır. <strong>Niyet ağı</strong> (bag-of-words MLP) sorunun kategorisini öngörür ve cevap seçimini etkiler; <strong>karakter ağı</strong> (embedding + MLP) açık kaynak kod derleminden karakter karakter üretmeyi öğrenir. Sohbette <code>üret: function </code> yaz.</p>
+        <p class="muted">Üç gerçek sinir ağı, tarayıcında <strong>gerçek geri yayılım + Adam optimizer</strong> ile eğitilir — kütüphane yok, her gradyan elle hesaplanır. <strong>Niyet ağı</strong> sorunun kategorisini öngörüp cevap seçimini etkiler; <strong>kod ağı</strong> açık kaynak derlemden karakter karakter, <strong>kelime ağı</strong> bilgi tabanının Türkçe metinlerinden kelime kelime üretmeyi öğrenir. Sohbette <code>üret: function </code> ve <code>kelime: yapay zeka</code> dene.</p>
         <div class="train-progress">
           <div class="progress-bar"><div class="progress-fill" id="nn-fill"></div></div>
           <span id="nn-label">Karakter ağı henüz eğitilmedi — "Sinir Ağını Eğit" (~10 sn, canlı kayıp eğrisiyle)</span>

@@ -416,6 +416,224 @@ const VegaML = (() => {
     return out;
   }
 
+  /* ============================================================
+     3) WordNet — kelime düzeyi nöral dil modeli
+     Bilgi tabanının Türkçe metinleri üzerinde eğitilir. Sözlük
+     gerçek kelimelerden oluşur: üretilen her token gerçek bir
+     kelimedir, dizilimini (hangi kelimeden sonra ne gelir) ağ
+     kendisi öğrenir. Mimari CodeNet ile aynı: embedding + MLP.
+     ============================================================ */
+  const WCTX = 6, WEMB = 24, WHID = 64, WVOCAB = 800;
+  const wordnet = {
+    ready: false, words: null, wordIdx: null,
+    emb: null, net: null, history: [], trainedWords: 0
+  };
+
+  function wordTokens(text) {
+    return (text || "").toLocaleLowerCase("tr")
+      .replace(/[^a-zçğıöşü0-9.\s]/gi, " ")
+      .replace(/\./g, " . ")
+      .split(/\s+/).filter(Boolean);
+  }
+
+  async function trainWordNet(texts, opts = {}) {
+    const { steps = 550, batch = 32, lr = 0.006, onProgress } = opts;
+    const stream = [];
+    texts.forEach(t => { stream.push(...wordTokens(t), "."); });
+
+    // Sözlük: en sık WVOCAB-1 kelime; 0 = bilinmeyen (UNK)
+    const freq = new Map();
+    stream.forEach(w => freq.set(w, (freq.get(w) || 0) + 1));
+    const words = ["<?>", ...[...freq.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, WVOCAB - 1).map(e => e[0])];
+    const wordIdx = new Map(words.map((w, i) => [w, i]));
+    const V = words.length;
+    const data = new Int32Array(stream.length);
+    for (let i = 0; i < stream.length; i++) data[i] = wordIdx.get(stream[i]) ?? 0;
+
+    const cut = Math.floor(data.length * 0.93);
+    const trainData = data.subarray(0, cut);
+    const valData = data.subarray(cut);
+
+    const rand = rng(2024);
+    const emb = randInit(V * WEMB, 0.08, rand);
+    const embOpt = adam(emb);
+    const net = createMLP(WCTX * WEMB, WHID, V, 11);
+
+    function makeBatch(src, B, r) {
+      const X = zeros(B * WCTX * WEMB);
+      const idxs = new Int32Array(B * WCTX);
+      const y = new Int32Array(B);
+      for (let b = 0; b < B; b++) {
+        // hedefi UNK olmayan bir pencere bul (en fazla 8 deneme)
+        let pos = 0;
+        for (let tries = 0; tries < 8; tries++) {
+          pos = WCTX + Math.floor(r() * (src.length - WCTX - 1));
+          if (src[pos] !== 0) break;
+        }
+        for (let c = 0; c < WCTX; c++) {
+          const wi = src[pos - WCTX + c];
+          idxs[b * WCTX + c] = wi;
+          X.set(emb.subarray(wi * WEMB, wi * WEMB + WEMB), (b * WCTX + c) * WEMB);
+        }
+        y[b] = src[pos];
+      }
+      return { X, y, idxs };
+    }
+
+    function valLoss() {
+      // Deterministik doğrulama seti: her ölçümde AYNI 128 pencere —
+      // metrik gürültüsü olmadan gerçek genelleme takibi
+      const r = rng(3);
+      const B = 128;
+      const { X, y } = makeBatch(valData, B, r);
+      const P = net.forward(X, B, null);
+      let L = 0;
+      for (let b = 0; b < B; b++) L += -Math.log(Math.max(1e-9, P[b * V + y[b]]));
+      return L / B;
+    }
+
+    wordnet.history = [];
+    let bestVal = Infinity, bestSnapshot = null;
+    for (let s = 1; s <= steps; s++) {
+      const { X, y, idxs } = makeBatch(trainData, batch, rand);
+      const { loss, dz1 } = net.trainStep(X, y, batch, lr);
+
+      // embedding geri yayılımı (CodeNet ile aynı desen)
+      const dEmb = zeros(emb.length);
+      for (let b = 0; b < batch; b++) {
+        for (let c = 0; c < WCTX; c++) {
+          const wi = idxs[b * WCTX + c];
+          const xo = c * WEMB;
+          for (let e2 = 0; e2 < WEMB; e2++) {
+            let acc = 0;
+            const col = xo + e2;
+            for (let h = 0; h < WHID; h++)
+              acc += dz1[b * WHID + h] * net.W1[col * WHID + h];
+            dEmb[wi * WEMB + e2] += acc;
+          }
+        }
+      }
+      embOpt(dEmb, lr);
+
+      if (s % 20 === 0 || s === steps) {
+        const vl = valLoss();
+        wordnet.history.push({ step: s, loss, val: vl });
+        // en iyi doğrulama anının ağırlıklarını sakla (erken durdurma ruhu)
+        if (vl < bestVal) {
+          bestVal = vl;
+          bestSnapshot = {
+            emb: Float32Array.from(emb),
+            W1: Float32Array.from(net.W1), b1: Float32Array.from(net.b1),
+            W2: Float32Array.from(net.W2), b2: Float32Array.from(net.b2)
+          };
+        }
+        if (onProgress) onProgress(s, steps, loss, vl);
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+
+    // Aşırı öğrenmeye karşı: doğrulaması en iyi ağırlıklara geri dön
+    if (bestSnapshot) {
+      emb.set(bestSnapshot.emb);
+      net.W1.set(bestSnapshot.W1); net.b1.set(bestSnapshot.b1);
+      net.W2.set(bestSnapshot.W2); net.b2.set(bestSnapshot.b2);
+    }
+
+    wordnet.words = words;
+    wordnet.wordIdx = wordIdx;
+    wordnet.emb = emb;
+    wordnet.net = net;
+    wordnet.trainedWords = trainData.length;
+    wordnet.ready = true;
+    return wordnet.history.at(-1);
+  }
+
+  function generateWords(prefix, maxWords = 40, temperature = 0.85, seed = 1) {
+    if (!wordnet.ready) return null;
+    const { words, wordIdx, emb, net } = wordnet;
+    const V = words.length;
+    const rand = rng(seed >>> 0 || 1);
+
+    const pre = wordTokens(prefix);
+    let ctx = new Int32Array(WCTX);
+    for (let c = 0; c < WCTX; c++) {
+      const w = pre[pre.length - WCTX + c];
+      ctx[c] = (w != null ? wordIdx.get(w) : null) ?? wordIdx.get(".") ?? 0;
+    }
+
+    const out = [...pre];
+    const recent = [];             // tekrar cezası penceresi
+    let sentences = 0;
+    for (let i = 0; i < maxWords; i++) {
+      const X = zeros(WCTX * WEMB);
+      for (let c = 0; c < WCTX; c++)
+        X.set(emb.subarray(ctx[c] * WEMB, ctx[c] * WEMB + WEMB), c * WEMB);
+      const P = net.forward(X, 1, null);
+      const logits = new Float64Array(V);
+      let sum = 0;
+      for (let v = 1; v < V; v++) {   // 0 (UNK) asla örneklenmez
+        let l = Math.pow(Math.max(1e-9, P[v]), 1 / temperature);
+        if (recent.includes(v)) l *= 0.12;   // tekrar cezası: "vs vs" önlenir
+        logits[v] = l;
+        sum += l;
+      }
+      let r = rand() * sum, pick = 1;
+      for (let v = 1; v < V; v++) { r -= logits[v]; if (r <= 0) { pick = v; break; } }
+      const w = words[pick];
+      out.push(w);
+      recent.push(pick);
+      if (recent.length > 4) recent.shift();
+      ctx = new Int32Array([...ctx.subarray(1), pick]);
+      if (w === ".") { sentences++; if (sentences >= 2 && i > 12) break; }
+    }
+    // noktalama düzelt: " ." → ".", ard arda noktaları tekle, cümle başları büyük
+    return out.join(" ").replace(/\s+\./g, ".").replace(/\.{2,}/g, ".")
+      .replace(/(^|\. )([a-zçğıöşü])/g, (m, p, ch) => p + ch.toLocaleUpperCase("tr"));
+  }
+
+  const NNW_KEY = "vega_nn_w1";
+
+  function saveWordNet() {
+    if (!wordnet.ready) return false;
+    try {
+      localStorage.setItem(NNW_KEY, JSON.stringify({
+        v: 1, words: wordnet.words, ctx: WCTX, embDim: WEMB, hid: WHID,
+        emb: f32ToB64(wordnet.emb),
+        W1: f32ToB64(wordnet.net.W1), b1: f32ToB64(wordnet.net.b1),
+        W2: f32ToB64(wordnet.net.W2), b2: f32ToB64(wordnet.net.b2),
+        history: wordnet.history, trainedWords: wordnet.trainedWords
+      }));
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function loadWordNet() {
+    try {
+      const raw = localStorage.getItem(NNW_KEY);
+      if (!raw) return false;
+      const d = JSON.parse(raw);
+      if (d.v !== 1 || d.ctx !== WCTX || d.embDim !== WEMB || d.hid !== WHID) return false;
+      const V = d.words.length;
+      wordnet.words = d.words;
+      wordnet.wordIdx = new Map(d.words.map((w, i) => [w, i]));
+      wordnet.emb = b64ToF32(d.emb);
+      wordnet.net = createMLP(WCTX * WEMB, WHID, V, 11);
+      wordnet.net.W1.set(b64ToF32(d.W1)); wordnet.net.b1.set(b64ToF32(d.b1));
+      wordnet.net.W2.set(b64ToF32(d.W2)); wordnet.net.b2.set(b64ToF32(d.b2));
+      wordnet.history = d.history || [];
+      wordnet.trainedWords = d.trainedWords || 0;
+      wordnet.ready = true;
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function clearWordNet() {
+    localStorage.removeItem(NNW_KEY);
+    wordnet.ready = false;
+    wordnet.history = [];
+  }
+
   /* ---------- Kalıcılık (base64 Float32) ---------- */
   function f32ToB64(f) {
     const u8 = new Uint8Array(f.buffer, f.byteOffset, f.byteLength);
@@ -486,11 +704,18 @@ const VegaML = (() => {
       codeHistory: codenet.history,
       codeVocab: codenet.chars ? codenet.chars.length : 0,
       codeTrainedChars: codenet.trainedChars,
+      wordReady: wordnet.ready,
+      wordParams: wordnet.net
+        ? wordnet.net.paramCount + (wordnet.emb ? wordnet.emb.length : 0) : 0,
+      wordHistory: wordnet.history,
+      wordVocab: wordnet.words ? wordnet.words.length : 0,
+      wordTrainedWords: wordnet.trainedWords,
       ctx: CTX, emb: EMB, hid: HID
     };
   }
 
   return { trainIntent, predictIntent, trainCodeNet, generate,
+           trainWordNet, generateWords, saveWordNet, loadWordNet, clearWordNet,
            saveCodeNet, loadCodeNet, clearCodeNet, info,
            _mlp: createMLP };   // testler için
 })();

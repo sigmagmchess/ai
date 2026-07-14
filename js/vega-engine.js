@@ -394,6 +394,27 @@ const VegaEngine = (() => {
       };
     }
 
+    // Kelime üretim komutu (kelime düzeyi sinir ağı)
+    const wordMatch = text.match(/^(kelime|cümle)\s*:\s*(.+)$/is);
+    if (wordMatch) {
+      const ml = (typeof VegaML !== "undefined") ? VegaML : null;
+      if (!ml || !ml.info().wordReady) {
+        return {
+          type: "info",
+          text: "Kelime düzeyi dil modelim henüz eğitilmedi. **Admin > Nöral Çekirdek** bölümünden \"Kelime Ağını Eğit\" butonuna bas — bilgi tabanımın Türkçe metinleri üzerinde gerçek geri yayılımla eğitilir (~10 sn), sonra bu komut çalışır.",
+          docId: null
+        };
+      }
+      const prefix = wordMatch[2].trim();
+      const gen = ml.generateWords(prefix, 40, 0.85, hashString("k:" + prefix));
+      return {
+        type: "code",
+        text: "Kelime düzeyi **sinir ağım** üretti — sözlüğü gerçek Türkçe kelimelerden oluşur, dizilimi bilgi tabanımın metinlerinden kendi öğrendi (dilbilgisi kusurlu olabilir, üretim sahicidir):",
+        code: gen,
+        docId: null
+      };
+    }
+
     // Nöral üretim komutu (karakter düzeyi sinir ağı)
     const neuralMatch = text.match(/^(üret|nöral)\s*:\s*(.+)$/is);
     if (neuralMatch) {
