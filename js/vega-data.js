@@ -17,6 +17,7 @@ const VEGA_FAMILIES = [
   ["Yapay Zekâ", ["Yapay Zeka"],                                                "#f472b6"],
   ["Güvenlik",   ["Güvenlik"],                                                  "#fb7185"],
   ["Araçlar",    ["Git", "Araçlar", "Tasarım", "Test"],                         "#60a5fa"],
+  ["Uygulamalı", ["Mobil", "Gömülü & IoT", "Oyun Geliştirme", "Veri Bilimi"],   "#fb923c"],
   ["Öğretilen",  ["Öğretilen"],                                                 "#a3e635"]
 ];
 

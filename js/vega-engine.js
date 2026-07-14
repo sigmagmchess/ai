@@ -35,8 +35,9 @@ const VegaEngine = (() => {
     const ext = (typeof VEGA_KNOWLEDGE_EXT !== "undefined") ? VEGA_KNOWLEDGE_EXT : [];
     const ext2 = (typeof VEGA_KNOWLEDGE_EXT2 !== "undefined") ? VEGA_KNOWLEDGE_EXT2 : [];
     const ext3 = (typeof VEGA_KNOWLEDGE_EXT3 !== "undefined") ? VEGA_KNOWLEDGE_EXT3 : [];
+    const ext4 = (typeof VEGA_KNOWLEDGE_EXT4 !== "undefined") ? VEGA_KNOWLEDGE_EXT4 : [];
     const ref = (typeof VEGA_KNOWLEDGE_REF !== "undefined") ? VEGA_KNOWLEDGE_REF : [];
-    return [...VEGA_KNOWLEDGE, ...ext, ...ext2, ...ext3, ...ref];
+    return [...VEGA_KNOWLEDGE, ...ext, ...ext2, ...ext3, ...ext4, ...ref];
   }
   function baseCorpus() {
     const ext = (typeof VEGA_CODE_CORPUS_EXT !== "undefined") ? VEGA_CODE_CORPUS_EXT : [];

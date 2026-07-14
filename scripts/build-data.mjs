@@ -435,6 +435,91 @@ for (const [bk, br] of Object.entries(bcd.browsers)) {
   }
 }
 
+/* --- Olgu paketi: HTTP durum kodları (RFC 9110) --- */
+const HTTP_STATUS = [
+  [100,'Continue','İstemci isteğin gövdesini göndermeye devam edebilir.'],
+  [101,'Switching Protocols','Sunucu protokol değişimini (ör. WebSocket upgrade) kabul etti.'],
+  [200,'OK','İstek başarılı; yanıt gövdesi sonucu içerir.'],
+  [201,'Created','Yeni kaynak oluşturuldu; Location başlığı adresini verir.'],
+  [202,'Accepted','İstek kabul edildi ama işlem henüz tamamlanmadı (asenkron işleme).'],
+  [204,'No Content','Başarılı; dönecek gövde yok (ör. DELETE sonrası).'],
+  [206,'Partial Content','Range isteğine kısmi içerik döndü (video akışı, kaldığı yerden indirme).'],
+  [301,'Moved Permanently','Kaynak kalıcı olarak taşındı; tarayıcı ve arama motorları yeni adresi önbellekler.'],
+  [302,'Found','Geçici yönlendirme; özgün adres kullanılmaya devam etmeli.'],
+  [304,'Not Modified','İçerik değişmedi; istemci önbelleğindeki kopyayı kullanır (ETag/If-None-Match).'],
+  [307,'Temporary Redirect','Geçici yönlendirme; metod ve gövde korunur (302 bazen GET\'e çevirir).'],
+  [308,'Permanent Redirect','Kalıcı yönlendirme; metod ve gövde korunur.'],
+  [400,'Bad Request','İstek bozuk: geçersiz sözdizimi, eksik/yanlış parametre.'],
+  [401,'Unauthorized','Kimlik doğrulaması gerekli veya geçersiz (adı yanıltıcıdır: authentication).'],
+  [403,'Forbidden','Kimlik doğrulandı ama bu kaynağa yetki yok (authorization).'],
+  [404,'Not Found','Kaynak bulunamadı.'],
+  [405,'Method Not Allowed','Bu kaynak bu HTTP metodunu desteklemiyor; Allow başlığı geçerli metodları listeler.'],
+  [406,'Not Acceptable','Accept başlığındaki içerik türü üretilemiyor.'],
+  [408,'Request Timeout','Sunucu isteği beklerken zaman aşımına uğradı.'],
+  [409,'Conflict','İstek mevcut durumla çakışıyor (ör. sürüm çatışması, tekrar kayıt).'],
+  [410,'Gone','Kaynak kalıcı olarak kaldırıldı (404\'ten farkı: bilinçli ve kalıcı).'],
+  [411,'Length Required','Content-Length başlığı zorunlu.'],
+  [412,'Precondition Failed','If-Match gibi koşul başarısız (iyimser kilitleme).'],
+  [413,'Content Too Large','İstek gövdesi sunucu limitinden büyük.'],
+  [415,'Unsupported Media Type','İstek gövdesinin içerik türü desteklenmiyor.'],
+  [418,'I\'m a teapot','Şaka kodu (RFC 2324, 1 Nisan). Bazı API\'ler bot engellemede kullanır.'],
+  [422,'Unprocessable Content','Sözdizimi doğru ama anlamsal doğrulama başarısız (form hataları için yaygın).'],
+  [425,'Too Early','Sunucu yeniden oynatma (replay) riskli erken isteği işlemek istemiyor.'],
+  [426,'Upgrade Required','İstemci başka protokole (ör. TLS) yükseltme yapmalı.'],
+  [428,'Precondition Required','Sunucu koşullu istek (If-Match) zorunlu kılıyor — kayıp güncelleme koruması.'],
+  [429,'Too Many Requests','Hız sınırı aşıldı; Retry-After başlığı bekleme süresini verir.'],
+  [431,'Request Header Fields Too Large','Başlıklar çok büyük (genelde şişmiş çerezler).'],
+  [451,'Unavailable For Legal Reasons','Yasal gerekçeyle erişilemiyor (sansür/telif).'],
+  [500,'Internal Server Error','Sunucuda beklenmeyen hata — genel sunucu arızası kodu.'],
+  [501,'Not Implemented','Sunucu bu metodu/özelliği hiç desteklemiyor.'],
+  [502,'Bad Gateway','Ara sunucu (proxy/load balancer) arkadaki sunucudan geçersiz yanıt aldı.'],
+  [503,'Service Unavailable','Sunucu geçici olarak hizmet veremiyor (bakım/aşırı yük); Retry-After verilebilir.'],
+  [504,'Gateway Timeout','Ara sunucu, arkadaki sunucudan zamanında yanıt alamadı.'],
+  [505,'HTTP Version Not Supported','İstenen HTTP sürümü desteklenmiyor.'],
+  [507,'Insufficient Storage','Sunucuda yer yok (WebDAV).'],
+  [511,'Network Authentication Required','Ağ erişimi için kimlik doğrulama gerekli (otel/kafe portalları).']
+];
+for (const [code, name, desc] of HTTP_STATUS) {
+  push({
+    id: `ref-status-${code}`,
+    cat: 'Referans/HTTP',
+    q: `http ${code} durum kodu status code ${camelWords(name)} hata anlamı nedir`,
+    title: `HTTP ${code} ${name}`,
+    a: [`HTTP durum kodu ${code} (${name}): ${desc}`,
+        `Sınıf: ${code < 200 ? '1xx bilgi' : code < 300 ? '2xx başarı' : code < 400 ? '3xx yönlendirme' : code < 500 ? '4xx istemci hatası' : '5xx sunucu hatası'}.`]
+  });
+}
+
+/* --- Olgu paketi: bilinen portlar (IANA) --- */
+const PORTS = [
+  [20,'FTP (veri)'],[21,'FTP (kontrol)'],[22,'SSH — güvenli kabuk, SFTP ve git ssh bunun üstünde çalışır'],
+  [23,'Telnet (şifresiz — kullanmayın)'],[25,'SMTP — sunucular arası e-posta iletimi'],
+  [53,'DNS — alan adı çözümleme (UDP ağırlıklı, büyük yanıtlar TCP)'],
+  [67,'DHCP (sunucu)'],[68,'DHCP (istemci)'],[80,'HTTP — şifresiz web trafiği'],
+  [110,'POP3 — e-posta indirme (eski)'],[123,'NTP — ağ saat eşitleme'],
+  [143,'IMAP — e-posta erişimi'],[161,'SNMP — ağ cihazı izleme'],
+  [443,'HTTPS — TLS üzerinden web; HTTP/3 (QUIC) aynı portu UDP ile kullanır'],
+  [465,'SMTPS — TLS ile e-posta gönderimi'],[587,'SMTP (submission) — istemcinin e-posta göndermesi için standart'],
+  [993,'IMAPS — TLS ile IMAP'],[995,'POP3S — TLS ile POP3'],
+  [1433,'Microsoft SQL Server'],[1521,'Oracle veritabanı'],
+  [3000,'Geliştirme sunucuları (Node/React vb. varsayılanı)'],
+  [3306,'MySQL / MariaDB'],[3389,'RDP — Windows uzak masaüstü'],
+  [5173,'Vite geliştirme sunucusu varsayılanı'],[5432,'PostgreSQL'],
+  [5672,'AMQP (RabbitMQ)'],[6379,'Redis'],[8000,'Yaygın geliştirme portu (Django varsayılanı)'],
+  [8080,'Alternatif HTTP / proxy — geliştirmede yaygın'],[8443,'Alternatif HTTPS'],
+  [9092,'Apache Kafka'],[9200,'Elasticsearch'],[27017,'MongoDB']
+];
+for (const [port, desc] of PORTS) {
+  push({
+    id: `ref-port-${port}`,
+    cat: 'Referans/Ağ',
+    q: `port ${port} hangi servis bilinen port numarası well known ağ`,
+    title: `Port ${port}`,
+    a: [`${port} numaralı port: ${desc}.`,
+        `${port < 1024 ? 'Bilinen (well-known) port aralığında — açmak çoğu sistemde yönetici yetkisi ister.' : 'Kayıtlı/dinamik aralıkta.'}`]
+  });
+}
+
 const header = `/* =========================================================
    VEGA Referans Paketi — MDN verisinden otomatik üretildi
    Kaynaklar (CC0 1.0 / Public Domain):
@@ -480,6 +565,26 @@ function walkPy(dir) {
   try { walkPy(dir).forEach(p => sources.push([label, p])); } catch (e) {}
 });
 
+// Gerçek Go kaynak kodu (proxy.golang.org modül zip'lerinden)
+function walkExt(dir, ext) {
+  return readdirSync(dir).flatMap(f => {
+    const p = path.join(dir, f);
+    return statSync(p).isDirectory() ? walkExt(p, ext)
+      : (f.endsWith(ext) && !f.endsWith('_test' + ext) ? [p] : []);
+  });
+}
+[['gin 1.10.0 (MIT)', `${DL}/go-gin`],
+ ['cobra 1.8.1 (Apache-2.0)', `${DL}/go-cobra`],
+ ['gorm 1.25.12 (MIT)', `${DL}/go-gorm`]
+].forEach(([label, dir]) => {
+  try { walkExt(dir, '.go').forEach(p => sources.push([label, p])); } catch (e) {}
+});
+// pandas (.py — derlenmiş .so hariç)
+try {
+  walkExt(`${DL}/py-pandas/pandas`, '.py').forEach(p =>
+    sources.push(['pandas 2.2.3 (BSD-3)', p]));
+} catch (e) {}
+
 // Büyük tekil kaynaklar en sona: kalan bütçeyi doldururlar
 sources.push(['typescript 5.5.4 (Apache-2.0)', `${DL}/typescript-5.5.4/lib/typescript.js`]);
 sources.push(['@babel/standalone 7.25.6 (MIT)', `${DL}/babel-standalone-7.25.6/babel.js`]);
@@ -495,7 +600,7 @@ walk(`${DL}/express-4.21.2/lib`).forEach(p => sources.push(['express 4.21.2 (MIT
 
 const seen = new Set();
 const lines = [];
-let budget = 10.8e6; // ~10.5 MB hedef (JS + TS + Python karışık)
+let budget = 14.5e6; // ~14 MB hedef (JS + TS + Python + Go karışık)
 const perSource = {};
 
 for (const [label, file] of sources) {
