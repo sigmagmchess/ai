@@ -17,12 +17,18 @@ Vega; kod ağırlıklı, **gerçekten öğrenen**, tamamen tarayıcıda çalış
 
 ## Çalıştırma
 
+**En kolay yol — tek dosya:** depodaki hazır **`vega.html`** dosyasını indir ve çift tıkla. Tüm CSS, JS ve veri paketleri içine gömülüdür (~15 MB); klasör yapısı, sunucu, internet gerektirmez.
+
 ```bash
-# Dosyayı doğrudan açın:
-open index.html
-# veya bir yerel sunucuyla:
-python -m http.server 8000   # http://localhost:8000
+# Tek dosyayı yeniden üretmek istersen:
+node scripts/build-single.mjs      # → vega.html
+
+# Klasik yol (depo klasör yapısıyla birlikte):
+python -m http.server 8000         # http://localhost:8000
+# veya index.html'i doğrudan aç (css/ ve js/ klasörleri yanında olmalı!)
 ```
+
+> ⚠️ Yalnızca `index.html`'i tek başına indirirsen sayfa stilsiz/bozuk açılır — o dosya `css/` ve `js/` klasörlerine bağımlıdır. Tek dosya istiyorsan `vega.html` kullan.
 
 ## Özellikler
 
