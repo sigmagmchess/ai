@@ -66,7 +66,7 @@
       <div class="hero" id="chat-hero">
         <div class="hero-logo">V</div>
         <h2>Merhaba, ben Vega 🌌</h2>
-        <p>Kod ağırlıklı, <strong>gerçekten öğrenen</strong> yapay zekâ. <span id="hero-count">10.000+</span> gerçek bilgi kaydı (MDN referansları dahil), 60 bin satırlık açık kaynak kod derlemi, yazım hatası toleransı ve kalıcı hafıza ile.</p>
+        <p>Kod ağırlıklı, <strong>gerçekten öğrenen</strong> yapay zekâ. <span id="hero-count">15.000+</span> gerçek bilgi kaydı, 165 bin satırlık açık kaynak kod derlemi, gerçek sinir ağları ve kalıcı hafıza ile.</p>
         <div class="hero-cards">
           <button class="hero-card" data-q="closure nedir?">
             <span>💡</span><b>Soru sor</b><small>"closure nedir?"</small>
@@ -238,6 +238,15 @@
       </div>
 
       <div class="card">
+        <div class="card-head">
+          <h3>📏 Değerlendirme</h3>
+          <button class="btn ghost" id="eval-btn">Kıyaslamayı Çalıştır</button>
+        </div>
+        <p class="muted">Gerçek getirme (retrieval) kıyaslaması: her küratörlü kayıt için başlık ve anahtar kelime sorguları üretilir, sistemin doğru kaydı bulma oranı ölçülür. Sonuçlar canlı hesaplanır.</p>
+        <div class="stats-grid" id="eval-stats"></div>
+      </div>
+
+      <div class="card">
         <h3>💾 Model Dosyası</h3>
         <p class="muted">Öğrenilen bilgiler ve ağırlıklar JSON model dosyası olarak taşınabilir — başka tarayıcıya aktar, yedeğini al.</p>
         <div class="btn-row">
@@ -288,6 +297,7 @@
 
 <script src="js/vega-data.js"></script>
 <script src="js/vega-data-ext.js"></script>
+<script src="js/vega-data-ext2.js"></script>
 <script src="js/vega-data-ref.js"></script>
 <script src="js/vega-corpus-big.js"></script>
 <script src="js/vega-ml.js"></script>

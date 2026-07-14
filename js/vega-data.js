@@ -6,13 +6,14 @@
 /* Kategori aileleri: bilgi ağı renkleri ve nöral niyet sınıflandırıcısının
    etiketleri bu sabit listeden gelir (sıra sabittir — renk döngüsü yok) */
 const VEGA_FAMILIES = [
-  ["Diller",     ["JavaScript", "TypeScript", "Python"],                        "#8b7cff"],
+  ["Diller",     ["JavaScript", "TypeScript", "Python", "Go", "Rust", "Java"],  "#8b7cff"],
   ["Frontend",   ["React", "CSS", "HTML", "Web"],                               "#22d3ee"],
-  ["Backend",    ["Node.js", "Backend", "Veritabanı", "Ağ", "DevOps", "Linux"], "#34d399"],
-  ["Algoritma",  ["Algoritmalar", "Veri Yapıları", "Kavramlar"],                "#fbbf24"],
+  ["Backend",    ["Node.js", "Backend", "Veritabanı", "Ağ", "DevOps", "Linux",
+                  "İşletim Sistemi", "Sistem Tasarımı"],                        "#34d399"],
+  ["Algoritma",  ["Algoritmalar", "Veri Yapıları", "Kavramlar", "Matematik"],   "#fbbf24"],
   ["Yapay Zekâ", ["Yapay Zeka"],                                                "#f472b6"],
   ["Güvenlik",   ["Güvenlik"],                                                  "#fb7185"],
-  ["Araçlar",    ["Git", "Araçlar", "Tasarım"],                                 "#60a5fa"],
+  ["Araçlar",    ["Git", "Araçlar", "Tasarım", "Test"],                         "#60a5fa"],
   ["Öğretilen",  ["Öğretilen"],                                                 "#a3e635"]
 ];
 

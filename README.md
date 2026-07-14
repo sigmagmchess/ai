@@ -66,13 +66,17 @@ index.html
 
 | Paket | Boyut | İçerik | Kaynak / Lisans |
 |---|---|---|---|
-| `vega-data-ref.js` | ~5 MB | 12.329 referans kaydı: CSS özellik+değer+seçici+tür, HTML eleman+öznitelik+global, SVG, JS yerleşik+operatör+deyim, Web API arayüz+üye, HTTP başlık+yönerge+metod, WebAssembly — gerçek tarayıcı destek sürümleriyle | [mdn/browser-compat-data](https://github.com/mdn/browser-compat-data) + [mdn/data](https://github.com/mdn/data) — CC0 (kamu malı) |
-| `vega-corpus-big.js` | ~3 MB | 70.426 benzersiz gerçek kod satırı (n-gram eğitimi) | lodash, vue, d3, react-dom, three.js, axios, jquery, rxjs, handlebars, luxon, moment, underscore, backbone, express — MIT/ISC/Apache-2.0 |
+| `vega-data-ref.js` | ~6 MB | 15.041 referans kaydı: CSS özellik+değer+seçici+tür+at-kural yönergeleri, HTML eleman+öznitelik+global, SVG eleman+öznitelik, MathML, JS yerleşik+operatör+deyim+derinlik-3, Web API arayüz+üye+alt seçenek, HTTP başlık+yönerge+metod, WebAssembly, 1.255 tarayıcı sürüm tarihçesi — gerçek destek sürümleriyle | [mdn/browser-compat-data](https://github.com/mdn/browser-compat-data) + [mdn/data](https://github.com/mdn/data) — CC0 (kamu malı) |
+| `vega-corpus-big.js` | ~8.2 MB | 165.261 benzersiz gerçek kod satırı (n-gram + nöral eğitim) | lodash, vue, d3, react-dom, three.js, axios, jquery, rxjs, handlebars, luxon, moment, underscore, backbone, express, **typescript derleyicisi**, @babel/standalone — MIT/ISC/Apache-2.0 |
+| `vega-data-ext2.js` | ~150 KB | 113 küratörlü Türkçe kayıt: **Go, Rust, Java, İşletim Sistemi, Sistem Tasarımı, Test, Ağ (derin), Matematik** — çok-ajanlı üretim + her paket bağımsız hakem ajanla olgusal doğrulama | özgün içerik |
 
 Paketleri güncellemek için: `node scripts/build-data.mjs` (kaynakları npm'den indirip yeniden üretir).
 
 ### Motor nasıl çalışıyor?
 
-1. **Anlamsal arama** — Her bilgi kaydı TF-IDF vektörüne dönüştürülür; soru aynı uzaya izdüşürülüp kosinüs benzerliğiyle eşlenir. Eşik altında kalan sorulara Vega uydurmak yerine "bilmiyorum" der ve en yakın konuları önerir.
-2. **N-gram dil modeli** — Kod derlemi üzerinde 2/3-gram geçiş tabloları sayılır; kod tamamlama bu tablodan ağırlıklı örnekler. Kalite, Laplace düzeltmeli perplexity ile ölçülür.
-3. **Çevrimiçi öğrenme** — Öğretilen kayıtlar ve geri bildirim ağırlıkları anında indekse işlenir ve localStorage'da saklanır; sayfa yenilense de model hatırlar.
+1. **BM25 arama + ters indeks** — Sorgular, modern arama motorlarının kullandığı BM25 sıralamasıyla (terim doygunluğu k1=1.4, uzunluk normalizasyonu b=0.55) puanlanır; ters indeks sayesinde yalnız sorgu terimlerini içeren belgeler taranır (~0.5 ms/sorgu). Sorgu **kapsama sinyali** (özgün terimlerin kaçı eşleşti) yanlış-pozitifleri keser: eşik altında Vega uydurmak yerine "bilmiyorum" der. TF-IDF kosinüs, ilişki grafı ve ilgili-konular için ayrıca korunur.
+2. **Konuşma bağlamı** — Kısa/işaret zamirli takip soruları ("peki en kötü durumu?") önceki konunun terimleriyle zenginleştirilir.
+3. **Nöral katman** — Niyet sınıflandırıcısı (gerçek MLP) sorunun kategori ailesini öngörüp sıralamayı destekler; karakter düzeyi sinir ağı `üret:` komutunu besler.
+4. **N-gram dil modeli** — Kod derlemi üzerinde 2/3-gram geçiş tabloları; kod tamamlama ağırlıklı örnekleme, kalite Laplace düzeltmeli perplexity.
+5. **Çevrimiçi öğrenme** — Öğretilen kayıtlar ve geri bildirim ağırlıkları anında indekse işlenir, localStorage'da kalıcıdır.
+6. **Ölçüm** — Admin > Değerlendirme, gerçek getirme kıyaslaması çalıştırır: Top-1 **%99.2** / Top-3 **%99.2** (252 sorgu, 0.5 ms/sorgu).

@@ -516,8 +516,8 @@ function buildGraphView() {
 
   // Başlangıç konumları: kategori ailesine göre kümelenmiş halka
   const famAngles = new Map();
-  GRAPH_FAMILIES.forEach(([name], i) =>
-    famAngles.set(name, (i / GRAPH_FAMILIES.length) * Math.PI * 2));
+  VEGA_FAMILIES.forEach(([name], i) =>
+    famAngles.set(name, (i / VEGA_FAMILIES.length) * Math.PI * 2));
   nodes.forEach((n, i) => {
     const fam = familyOf(n.cat);
     const ang = (famAngles.get(fam.name) ?? 0) + (Math.sin(i * 7.13) * 0.55);
@@ -644,7 +644,7 @@ function buildGraphView() {
   };
 
   // Lejant
-  $("#graph-legend").innerHTML = GRAPH_FAMILIES.map(([name, , color]) =>
+  $("#graph-legend").innerHTML = VEGA_FAMILIES.map(([name, , color]) =>
     `<span><i style="background:${color}"></i>${name}</span>`).join("");
 }
 
@@ -918,6 +918,29 @@ function initAdmin() {
       refreshAdmin();
       toast("Kayıt silindi");
     }
+  });
+
+  // --- Değerlendirme kıyaslaması ---
+  $("#eval-btn").addEventListener("click", () => {
+    const btn = $("#eval-btn");
+    btn.disabled = true;
+    btn.textContent = "Ölçülüyor…";
+    setTimeout(() => {
+      const r = VegaEngine.evaluate();
+      const nn = VegaML.info();
+      $("#eval-stats").innerHTML = `
+        <div class="stat"><div class="val">%${(r.top1 * 100).toFixed(1)}</div>
+          <div class="lbl">Top-1 getirme doğruluğu</div></div>
+        <div class="stat"><div class="val">%${(r.top3 * 100).toFixed(1)}</div>
+          <div class="lbl">Top-3 getirme doğruluğu</div></div>
+        <div class="stat"><div class="val">${r.msPerQuery.toFixed(1)} ms</div>
+          <div class="lbl">Sorgu başına süre (${r.queries} sorgu)</div></div>
+        <div class="stat"><div class="val">${nn.intentReady ? "%" + Math.round(nn.intentAcc * 100) : "—"}</div>
+          <div class="lbl">Nöral niyet doğruluğu (val)</div></div>`;
+      btn.disabled = false;
+      btn.textContent = "Kıyaslamayı Çalıştır";
+      toast(`Kıyaslama bitti: Top-1 %${(r.top1 * 100).toFixed(1)}, Top-3 %${(r.top3 * 100).toFixed(1)} 📏`);
+    }, 50);
   });
 
   // --- Öğrenme kuyruğu ---

@@ -48,7 +48,7 @@ function camelWords(s) {
 
 function push(e) {
   const a = e.a.filter(Boolean).join('\n');
-  entries.push({ id: e.id, cat: e.cat, q: e.q, title: e.title, a, code: e.code || null, weight: 0.85 });
+  entries.push({ id: e.id, cat: e.cat, q: e.q, title: e.title, a, code: e.code || null, weight: e.w ?? 0.85 });
 }
 
 /* --- CSS özellikleri (mdn-data + BCD) --- */
@@ -113,6 +113,7 @@ for (const [name, tree] of Object.entries(bcd.api)) {
                           : `${name}.${member}`;
     push({
       id: `ref-api-${name}-${member}`,
+      w: 0.75,
       cat: 'Referans/WebAPI',
       q: `web api ${camelWords(name)} ${camelWords(member.replace(/_event$/, ''))} ${isEvent ? 'olay event' : 'metot özellik'}`,
       title: `Web API: ${label}`,
@@ -217,6 +218,7 @@ for (const [name, tree] of Object.entries(bcd.http.headers)) {
     const dc = node.__compat;
     push({
       id: `ref-http-${name}-${dir}`,
+      w: 0.75,
       cat: 'Referans/HTTP',
       q: `http başlık header ${camelWords(name)} ${camelWords(dir)} yönerge directive`,
       title: `HTTP: ${name} → ${dir}`,
@@ -245,6 +247,7 @@ for (const [elem, tree] of Object.entries(bcd.html.elements)) {
     const c = node.__compat;
     push({
       id: `ref-html-${elem}-${attr}`,
+      w: 0.75,
       cat: 'Referans/HTML',
       q: `html ${elem} ${camelWords(attr)} öznitelik attribute`,
       title: `HTML: <${elem}> özniteliği: ${attr}`,
@@ -275,6 +278,7 @@ for (const [prop, tree] of Object.entries(bcd.css.properties)) {
     const c = node.__compat;
     push({
       id: `ref-cssv-${prop}-${val}`,
+      w: 0.75,
       cat: 'Referans/CSS',
       q: `css ${prop.split('-').join(' ')} ${camelWords(val)} değer value`,
       title: `CSS: ${prop} değeri: ${val}`,
@@ -303,6 +307,7 @@ for (const [elem, tree] of Object.entries(bcd.svg.elements || {})) {
     const c = node.__compat;
     push({
       id: `ref-svg-${elem}-${attr}`,
+      w: 0.75,
       cat: 'Referans/SVG',
       q: `svg ${elem} ${camelWords(attr)} öznitelik attribute`,
       title: `SVG: <${elem}> özniteliği: ${attr}`,
@@ -332,6 +337,7 @@ for (const [obj, tree] of Object.entries(bcd.javascript.builtins)) {
       const c = leafNode.__compat;
       push({
         id: `ref-js-${obj}-${sub}-${leaf}`,
+      w: 0.75,
         cat: 'Referans/JavaScript',
         q: `javascript js ${camelWords(obj)} ${camelWords(sub)} ${camelWords(leaf)} parametre seçenek`,
         title: `JavaScript: ${obj}.${sub} → ${camelWords(leaf)}`,
@@ -349,6 +355,7 @@ for (const [rule, tree] of Object.entries(bcd.css['at-rules'] || {})) {
     const c = node.__compat;
     push({
       id: `ref-cssat-${rule}-${desc}`,
+      w: 0.75,
       cat: 'Referans/CSS',
       q: `css at kural rule @${rule} ${camelWords(desc)} yönerge descriptor`,
       title: `CSS: @${rule} → ${desc}`,
@@ -382,6 +389,52 @@ for (const [name, tree] of Object.entries(bcd.webassembly?.api || {})) {
   });
 }
 
+/* --- Web API derinlik-3 (üye alt özellikleri/seçenekleri) --- */
+for (const [name, tree] of Object.entries(bcd.api)) {
+  for (const [member, node] of Object.entries(tree)) {
+    if (member === '__compat') continue;
+    for (const [leaf, leafNode] of Object.entries(node)) {
+      if (leaf === '__compat' || !leafNode.__compat) continue;
+      const c = leafNode.__compat;
+      push({
+        id: `ref-api-${name}-${member}-${leaf}`,
+      w: 0.75,
+        cat: 'Referans/WebAPI',
+        q: `web api ${camelWords(name)} ${camelWords(member)} ${camelWords(leaf.replace(/_event$/, ''))} seçenek parametre`,
+        title: `Web API: ${name}.${member} → ${camelWords(leaf)}`,
+        a: [`${name}.${member} üyesinin alt özelliği/seçeneği.`,
+            statusLine(c.status), supportLine(c.support), mdnLine(c)]
+      });
+    }
+  }
+}
+
+/* --- Tarayıcı sürüm tarihçesi (BCD browsers) --- */
+const BROWSER_TR = {
+  chrome: 'Chrome', chrome_android: 'Chrome (Android)', edge: 'Edge',
+  firefox: 'Firefox', firefox_android: 'Firefox (Android)', safari: 'Safari',
+  safari_ios: 'Safari (iOS)', opera: 'Opera', ie: 'Internet Explorer',
+  nodejs: 'Node.js', deno: 'Deno', samsunginternet_android: 'Samsung Internet'
+};
+for (const [bk, br] of Object.entries(bcd.browsers)) {
+  const label = BROWSER_TR[bk];
+  if (!label) continue;
+  for (const [ver, rel] of Object.entries(br.releases || {})) {
+    if (!rel.release_date) continue;
+    push({
+      id: `ref-rel-${bk}-${ver.replace(/[^\w.]/g, '_')}`,
+      cat: 'Referans/Sürümler',
+      q: `${camelWords(bk)} ${ver} sürüm version ne zaman çıktı tarih release`,
+      title: `${label} ${ver}`,
+      a: [
+        `${label} sürüm ${ver} — yayın tarihi: ${rel.release_date}.` +
+        (rel.status ? ` Durum: ${rel.status}.` : '') +
+        (rel.engine ? ` Motor: ${rel.engine}${rel.engine_version ? ' ' + rel.engine_version : ''}.` : '')
+      ]
+    });
+  }
+}
+
 const header = `/* =========================================================
    VEGA Referans Paketi — MDN verisinden otomatik üretildi
    Kaynaklar (CC0 1.0 / Public Domain):
@@ -410,8 +463,10 @@ const sources = [
   ['luxon 3.5.0 (MIT)', `${DL}/luxon-3.5.0/build/global/luxon.js`],
   ['underscore 1.13.7 (MIT)', `${DL}/underscore-1.13.7/underscore.js`],
   ['backbone 1.6.0 (MIT)', `${DL}/backbone-1.6.0/backbone.js`],
-  ['typescript 5.5.4 (Apache-2.0)', `${DL}/typescript-5.5.4/lib/typescript.js`]
+  ['typescript 5.5.4 (Apache-2.0)', `${DL}/typescript-5.5.4/lib/typescript.js`],
+  ['@babel/standalone 7.25.6 (MIT)', `${DL}/babel-standalone-7.25.6/babel.js`]
 ];
+walk(`${DL}/webpack-5.94.0/lib`).forEach(p => sources.push(['webpack 5.94.0 (MIT)', p]));
 // express: lib altındaki tüm .js dosyaları
 function walk(dir) {
   return readdirSync(dir).flatMap(f => {
@@ -423,7 +478,7 @@ walk(`${DL}/express-4.21.2/lib`).forEach(p => sources.push(['express 4.21.2 (MIT
 
 const seen = new Set();
 const lines = [];
-let budget = 5.6e6; // ~5.5 MB hedef
+let budget = 8.2e6; // ~8 MB hedef
 const perSource = {};
 
 for (const [label, file] of sources) {
