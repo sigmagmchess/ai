@@ -5,6 +5,10 @@
 document.addEventListener("DOMContentLoaded", () => {
   VegaEngine.load();
 
+  const heroCount = document.getElementById("hero-count");
+  if (heroCount) heroCount.textContent =
+    VegaEngine.getStats().docCount.toLocaleString("tr-TR");
+
   initStars();
   initTabs();
   initChat();
@@ -401,11 +405,12 @@ function renderMissed() {
 function renderStats() {
   const s = VegaEngine.getStats();
   const items = [
-    [s.docCount, "Bilgi kaydı"],
+    [s.docCount.toLocaleString("tr-TR"), "Bilgi kaydı"],
+    [s.corpusLines.toLocaleString("tr-TR"), "Derlem satırı (eğitimde)"],
     [s.customCount, "Öğrenilen kayıt"],
-    [s.termCount, "İndeksli terim"],
-    [s.trigramCount, "Trigram"],
-    [s.vocabSize, "Kod sözlüğü"],
+    [s.termCount.toLocaleString("tr-TR"), "İndeksli terim"],
+    [s.trigramCount.toLocaleString("tr-TR"), "Trigram"],
+    [s.vocabSize.toLocaleString("tr-TR"), "Kod sözlüğü"],
     [s.queries, "Toplam sorgu"],
     [s.feedbackUp + "/" + s.feedbackDown, "👍 / 👎"],
     [s.missedCount, "Öğrenme kuyruğu"],
@@ -416,14 +421,18 @@ function renderStats() {
 }
 
 function renderKbList(filter = "") {
+  const MAX_SHOW = 150;   // 10 binlerce kaydı DOM'a basma — arama ile daralt
   const list = $("#kb-list");
   const docs = VegaEngine.getDocs();
   const f = filter.toLocaleLowerCase("tr");
-  const shown = docs.filter(d =>
+  const matched = docs.filter(d =>
     !f || d.title.toLocaleLowerCase("tr").includes(f) ||
     d.cat.toLocaleLowerCase("tr").includes(f));
+  const shown = matched.slice(0, MAX_SHOW);
 
-  $("#kb-count").textContent = `${shown.length} / ${docs.length} kayıt`;
+  $("#kb-count").textContent = matched.length > MAX_SHOW
+    ? `${matched.length.toLocaleString("tr-TR")} eşleşme / ${docs.length.toLocaleString("tr-TR")} kayıt · ilk ${MAX_SHOW} gösteriliyor`
+    : `${matched.length.toLocaleString("tr-TR")} / ${docs.length.toLocaleString("tr-TR")} kayıt`;
   list.innerHTML = shown.map(d => `
     <div class="kb-item">
       <span class="cat ${d.custom ? "custom" : ""}">${escapeHtml(d.cat)}</span>

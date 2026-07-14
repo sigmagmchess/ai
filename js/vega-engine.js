@@ -33,11 +33,22 @@ const VegaEngine = (() => {
   // Genişletme paketleri yüklüyse birleştir
   function baseKnowledge() {
     const ext = (typeof VEGA_KNOWLEDGE_EXT !== "undefined") ? VEGA_KNOWLEDGE_EXT : [];
-    return [...VEGA_KNOWLEDGE, ...ext];
+    const ref = (typeof VEGA_KNOWLEDGE_REF !== "undefined") ? VEGA_KNOWLEDGE_REF : [];
+    return [...VEGA_KNOWLEDGE, ...ext, ...ref];
   }
   function baseCorpus() {
     const ext = (typeof VEGA_CODE_CORPUS_EXT !== "undefined") ? VEGA_CODE_CORPUS_EXT : [];
     return [...VEGA_CODE_CORPUS, ...ext];
+  }
+  // Büyük derlemden eşit aralıklı örneklem — bellek/başlangıç süresi dengesi
+  function bigSample(maxLines) {
+    if (typeof VEGA_BIG_CORPUS === "undefined") return [];
+    const step = Math.max(1, Math.floor(VEGA_BIG_CORPUS.length / maxLines));
+    const out = [];
+    for (let i = 0; i < VEGA_BIG_CORPUS.length && out.length < maxLines; i += step) {
+      out.push(VEGA_BIG_CORPUS[i]);
+    }
+    return out;
   }
   const SYNONYMS = (typeof VEGA_SYNONYMS !== "undefined") ? VEGA_SYNONYMS : {};
 
@@ -180,27 +191,34 @@ const VegaEngine = (() => {
   }
 
   // fixedVocab verilirse sözlük sabit kalır — epoch'lar arası perplexity
-  // karşılaştırılabilir olur (sözlük büyümesi metriği şişirmez)
+  // karşılaştırılabilir olur (sözlük büyümesi metriği şişirmez).
+  // ngrams3 bağlam haritasıdır: "w1 w2" → Map(w3 → sayım). Bu yapı hem
+  // olasılık sorgusunu hem kod tamamlama örneklemesini O(1) yapar.
   function trainNgrams(corpus, fixedVocab = null) {
     state.ngrams2 = new Map();
     state.ngrams3 = new Map();
+    state.trigramTotal = 0;
     state.vocab = fixedVocab || new Set();
     corpus.forEach(line => {
       const ts = ["<s>", "<s>", ...codeTokens(line), "</s>"];
       if (!fixedVocab) ts.forEach(t => state.vocab.add(t));
       for (let i = 2; i < ts.length; i++) {
         const bi = ts[i - 1] + " " + ts[i];
-        const tri = ts[i - 2] + " " + ts[i - 1] + " " + ts[i];
         state.ngrams2.set(bi, (state.ngrams2.get(bi) || 0) + 1);
-        state.ngrams3.set(tri, (state.ngrams3.get(tri) || 0) + 1);
+        const ctx = ts[i - 2] + " " + ts[i - 1];
+        let nexts = state.ngrams3.get(ctx);
+        if (!nexts) { nexts = new Map(); state.ngrams3.set(ctx, nexts); }
+        if (!nexts.has(ts[i])) state.trigramTotal++;
+        nexts.set(ts[i], (nexts.get(ts[i]) || 0) + 1);
       }
     });
+    state.lastCorpusSize = corpus.length;
   }
 
   // Laplace düzeltmeli trigram olasılığı
   function triProb(w1, w2, w3) {
     const V = state.vocab.size || 1;
-    const tri = state.ngrams3.get(w1 + " " + w2 + " " + w3) || 0;
+    const tri = state.ngrams3.get(w1 + " " + w2)?.get(w3) || 0;
     const bi = state.ngrams2.get(w1 + " " + w2) || 0;
     return (tri + 1) / (bi + V);
   }
@@ -222,7 +240,9 @@ const VegaEngine = (() => {
   async function train(onProgress) {
     const corpus = [
       ...baseCorpus(),
-      ...state.docs.filter(d => d.code).map(d => d.code.replace(/\n/g, " "))
+      ...state.docs.filter(d => d.code && !d.id.startsWith("ref-"))
+        .map(d => d.code.replace(/\n/g, " ")),
+      ...bigSample(12000)   // gerçek açık kaynak derleminden geniş örneklem
     ];
 
     state.stats.lossHistory = [];
@@ -276,15 +296,10 @@ const VegaEngine = (() => {
     let w2 = out[out.length - 1];
 
     for (let i = 0; i < maxTokens; i++) {
-      // w1 w2 ile başlayan tüm trigramlardan ağırlıklı örnekle
-      const candidates = [];
-      state.ngrams3.forEach((count, key) => {
-        const parts = key.split(" ");
-        if (parts.length >= 3 && parts[0] === w1 && parts[1] === w2) {
-          candidates.push([parts.slice(2).join(" "), count]);
-        }
-      });
-      if (candidates.length === 0) break;
+      // Bağlam haritasından O(1) aday erişimi, sayım ağırlıklı örnekleme
+      const nexts = state.ngrams3.get(w1 + " " + w2);
+      if (!nexts || nexts.size === 0) break;
+      const candidates = [...nexts.entries()].map(([tok, count]) => [tok, count]);
       const total = candidates.reduce((s, c) => s + c[1], 0);
       let r = rnd() * total, next = candidates[0][0];
       for (const [tok, count] of candidates) {
@@ -427,6 +442,7 @@ const VegaEngine = (() => {
     // Bu soru öğrenme kuyruğundaysa kapat — döngü tamamlandı
     state.missed = state.missed.filter(m =>
       cosine(queryVector(m.q), state.vectors[state.docs.length - 1]) < 0.15);
+    persist();
     return doc;
   }
 
@@ -468,7 +484,11 @@ const VegaEngine = (() => {
     try {
       const custom = state.docs.filter(d => d.custom);
       const weights = {};
-      state.docs.forEach(d => { if (d.weight !== 1.0) weights[d.id] = d.weight; });
+      // Yalnız fabrika değerinden sapan ağırlıklar saklanır — 10 bin
+      // referans kaydının varsayılan 0.85'i localStorage'ı şişirmesin
+      state.docs.forEach(d => {
+        if (d.weight !== (d._bw ?? 1.0)) weights[d.id] = d.weight;
+      });
       localStorage.setItem(STORE_KEY, JSON.stringify({
         custom, weights, stats: state.stats, missed: state.missed
       }));
@@ -489,9 +509,13 @@ const VegaEngine = (() => {
         if (saved.missed) state.missed = saved.missed;
       }
     } catch (e) { /* bozuk kayıt — fabrika verisiyle devam */ }
+    // Fabrika ağırlıklarını hatırla — persist yalnız SAPMALARI kaydetsin
+    state.docs.forEach(d => { if (d._bw == null) d._bw = d.weight; });
     buildIndex();
     trainNgrams([...baseCorpus(),
-                 ...state.docs.filter(d => d.code).map(d => d.code.replace(/\n/g, " "))]);
+                 ...state.docs.filter(d => d.code && !d.id.startsWith("ref-"))
+                   .map(d => d.code.replace(/\n/g, " ")),
+                 ...bigSample(4000)]);   // başlangıçta hafif örneklem
     state.trained = true;
   }
 
@@ -508,7 +532,8 @@ const VegaEngine = (() => {
       format: "vega-model-v1",
       exported: new Date().toISOString(),
       custom: state.docs.filter(d => d.custom),
-      weights: Object.fromEntries(state.docs.filter(d => d.weight !== 1.0).map(d => [d.id, d.weight])),
+      weights: Object.fromEntries(state.docs
+        .filter(d => d.weight !== (d._bw ?? 1.0)).map(d => [d.id, d.weight])),
       stats: state.stats
     }, null, 2);
   }
@@ -543,8 +568,9 @@ const VegaEngine = (() => {
       docCount: state.docs.length,
       customCount: state.docs.filter(d => d.custom).length,
       vocabSize: state.vocab.size,
-      trigramCount: state.ngrams3.size,
+      trigramCount: state.trigramTotal || 0,
       termCount: Object.keys(state.idf).length,
+      corpusLines: state.lastCorpusSize || 0,
       missedCount: state.missed.length
     };
   }

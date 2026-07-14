@@ -32,16 +32,34 @@ python -m http.server 8000   # http://localhost:8000
 
 ```
 index.html
-├── css/style.css        # arayüz
+├── css/style.css          # arayüz (kenar çubuklu düzen, cam yüzeyler)
+├── scripts/
+│   └── build-data.mjs     # veri paketlerini MDN/npm kaynaklarından yeniden üretir
 └── js/
-    ├── vega-data.js     # çekirdek bilgi tabanı, wiki, kod derlemi, doğrulama seti
-    ├── vega-data-ext.js # genişletme paketi: +70 kayıt, +40 kod satırı, eşanlamlı sözlük
-    ├── vega-engine.js   # TF-IDF + bigram + kosinüs arama, eşanlamlı genişletme,
-    │                    # fuzzy eşleme, trigram LM, perplexity, çevrimiçi öğrenme,
-    │                    # öğrenme kuyruğu, kalıcılık, model export/import
-    ├── vega-media.js    # üretken görsel (canvas) + algoritmik müzik (Web Audio)
-    └── app.js           # UI bağlantıları: sohbet, stüdyolar, wiki, admin
+    ├── vega-data.js       # çekirdek bilgi tabanı, wiki, kod derlemi, doğrulama seti
+    ├── vega-data-ext.js   # genişletme: +70 kayıt, +40 kod satırı, eşanlamlı sözlük
+    ├── vega-data-ref.js   # ~4.3 MB · 10.289 gerçek referans kaydı — MDN
+    │                      # browser-compat-data + mdn-data'dan üretildi (CC0):
+    │                      # CSS özellik/seçici, HTML, SVG, JS yerleşik/operatör,
+    │                      # Web API arayüz+üyeleri, HTTP başlıkları + destek tabloları
+    ├── vega-corpus-big.js # ~2.5 MB · 59.768 benzersiz satır GERÇEK kaynak kod
+    │                      # (lodash, vue, d3, react-dom, three.js, axios, jquery,
+    │                      # moment, express — MIT/ISC) → n-gram eğitim derlemi
+    ├── vega-engine.js     # TF-IDF + bigram + kosinüs arama, eşanlamlı genişletme,
+    │                      # fuzzy eşleme, trigram LM (bağlam haritalı), perplexity,
+    │                      # çevrimiçi öğrenme, öğrenme kuyruğu, kalıcılık, export/import
+    ├── vega-media.js      # üretken görsel (canvas) + algoritmik müzik (Web Audio)
+    └── app.js             # UI bağlantıları: sohbet, stüdyolar, wiki, admin
 ```
+
+### Veri paketleri ve lisanslar
+
+| Paket | Boyut | İçerik | Kaynak / Lisans |
+|---|---|---|---|
+| `vega-data-ref.js` | ~4.3 MB | 10.289 referans kaydı (gerçek tarayıcı destek verileriyle) | [mdn/browser-compat-data](https://github.com/mdn/browser-compat-data) + [mdn/data](https://github.com/mdn/data) — CC0 (kamu malı) |
+| `vega-corpus-big.js` | ~2.5 MB | 59.768 benzersiz gerçek kod satırı (n-gram eğitimi) | lodash, vue, d3, react-dom, three.js, axios, jquery, moment, express — MIT/ISC |
+
+Paketleri güncellemek için: `node scripts/build-data.mjs` (kaynakları npm'den indirip yeniden üretir).
 
 ### Motor nasıl çalışıyor?
 

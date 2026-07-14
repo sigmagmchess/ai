@@ -575,7 +575,10 @@ Bilgi tabanındaki her kayıt, kelime sıklığı × ters belge sıklığı (TF-
 Kod derlemi üzerinde 3-gram istatistiksel dil modeli eğitilir. Eğitim gerçektir: geçiş olasılıkları sayılır, model kalitesi perplexity (şaşkınlık) metriğiyle ölçülür ve admin panelindeki grafikte gerçek değerler gösterilir.
 
 **3. Çevrimiçi Öğrenme Katmanı**
-Kullanıcının öğrettiği bilgiler ve 👍/👎 geri bildirimleri kayıt ağırlıklarını günceller, tarayıcı depolamasında (localStorage) kalıcı tutulur ve bir sonraki eğitimde modele işlenir. Vega bu sayede kullandıkça gerçekten gelişir.`
+Kullanıcının öğrettiği bilgiler ve 👍/👎 geri bildirimleri kayıt ağırlıklarını günceller, tarayıcı depolamasında (localStorage) kalıcı tutulur ve bir sonraki eğitimde modele işlenir. Vega bu sayede kullandıkça gerçekten gelişir.
+
+**Veri paketleri**
+Bilgi tabanı iki büyük gerçek veri paketiyle beslenir: MDN'in kamu malı (CC0) tarayıcı uyumluluk verisinden üretilmiş ~10.000 referans kaydı (CSS, HTML, SVG, JavaScript, Web API, HTTP — gerçek sürüm destek tablolarıyla) ve dokuz büyük açık kaynak projenin (lodash, vue, d3, react-dom, three.js…) kaynak kodundan çıkarılmış ~60.000 satırlık kod derlemi. Derlem, n-gram dil modelinin eğitim verisidir — kod tamamlama gerçek üretim kodu desenlerinden örnekler.`
   },
   {
     id: "wiki-egitim", title: "Eğitim Süreci",
