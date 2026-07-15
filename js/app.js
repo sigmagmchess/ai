@@ -150,13 +150,29 @@ function initNeural() {
     $("#nn-fill").style.width = "100%";
   }
 
-  // Niyet sınıflandırıcısını arka planda eğit — gerçek gradyan inişi,
-  // bilgi tabanındaki (anahtar kelime → kategori) çiftleri üzerinde
+  // Niyet sınıflandırıcısı + anlamsal ağ arka planda eğitilir —
+  // her ikisi de gerçek gradyan güncellemeleriyle
   $("#status-sub").textContent = "niyet ağı eğitiliyor…";
   setTimeout(async () => {
     const acc = await VegaML.trainIntent(VegaEngine.getDocs());
     $("#status-sub").textContent =
       `niyet ağı hazır · doğrulama %${Math.round(acc * 100)}`;
+    renderNeuralCard();
+
+    // Anlamsal ağ (word2vec): kayıtlıysa yükle, yoksa eğit + kaydet
+    if (!VegaML.loadEmbed()) {
+      $("#status-sub").textContent = "anlamsal ağ eğitiliyor (word2vec)…";
+      await VegaML.trainEmbed(wordTrainingTexts(), {
+        onProgress: (p, total) => {
+          $("#status-sub").textContent =
+            `anlamsal ağ eğitiliyor · %${Math.round(p / total * 100)}`;
+        }
+      });
+      VegaML.saveEmbed();
+    }
+    const ei = VegaML.embedInfo();
+    $("#status-sub").textContent =
+      `tüm ağlar hazır · niyet %${Math.round(acc * 100)} · anlamsal ${ei.vocab} kelime`;
     renderNeuralCard();
   }, 350);
 
@@ -230,6 +246,13 @@ function initNeural() {
       parts.push("── kelime ağı ──\n" +
         VegaML.generateWords("yapay zeka", 36, 0.85, Date.now() % 100000));
     }
+    if (VegaML.embedInfo().ready) {
+      const probes = ["dizi", "hata", "veritabanı"].map(w => {
+        const nn = VegaML.nearestWords(w, 5);
+        return `${w} → ${nn.map(x => x.word).join(", ")}`;
+      });
+      parts.push("── anlamsal ağın ÖĞRENDİĞİ komşuluklar (word2vec) ──\n" + probes.join("\n"));
+    }
     $("#nn-sample").textContent = parts.join("\n\n");
     $("#nn-sample").parentElement.hidden = false;
   });
@@ -257,6 +280,13 @@ function renderNeuralCard() {
       <div class="lbl">Kelime ağı parametresi</div></div>
     <div class="stat"><div class="val">${i.wordReady ? (i.wordTrainedWords / 1000).toFixed(1) + "k / " + i.wordVocab : "—"}</div>
       <div class="lbl">Eğitim kelimesi / sözlük</div></div>`;
+
+  const ei = VegaML.embedInfo();
+  $("#nn-stats").innerHTML += `
+    <div class="stat"><div class="val">${ei.ready ? ei.vocab.toLocaleString("tr-TR") + " kelime" : "—"}</div>
+      <div class="lbl">Anlamsal ağ (word2vec) sözlüğü</div></div>
+    <div class="stat"><div class="val">${ei.ready ? (ei.trainedPairs / 1000).toFixed(0) + "k çift" : "—"}</div>
+      <div class="lbl">Skip-gram eğitim örneği</div></div>`;
   drawNeuralChart();
 }
 

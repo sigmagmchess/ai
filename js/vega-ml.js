@@ -700,6 +700,230 @@ const VegaML = (() => {
   }
 
   /* ============================================================
+     3.5) EmbedNet — word2vec (skip-gram + negative sampling)
+     Kelimelerin ANLAM vektörlerini bilgi tabanından öğrenir:
+     birlikte geçen kelimeler vektör uzayında yakınlaşır. Öğrenilen
+     vektörler aramanın anlamsal yeniden sıralamasında kullanılır —
+     elle yazılmış eşanlamlı listesinin nöral karşılığı.
+     ============================================================ */
+  const EMB_DIM = 48, EMB_VOCAB = 3000, EMB_WINDOW = 3, EMB_NEG = 5;
+  const embed = {
+    ready: false, vocab: null, words: null,
+    Win: null, Wout: null, mean: null, trainedPairs: 0, lossHistory: []
+  };
+
+  // "All-but-the-top" düzeltmesi: tüm vektörlerin ortak sürüklenme yönü
+  // (ortalama) çıkarılır — kosinüs benzerliği ancak o zaman ayrım yapar
+  function computeEmbedMean() {
+    const V = embed.words.length;
+    const m = new Float32Array(EMB_DIM);
+    for (let i = 0; i < V; i++) {
+      const off = i * EMB_DIM;
+      for (let d = 0; d < EMB_DIM; d++) m[d] += embed.Win[off + d];
+    }
+    for (let d = 0; d < EMB_DIM; d++) m[d] /= V;
+    embed.mean = m;
+  }
+
+  function centeredVec(i) {
+    const off = i * EMB_DIM;
+    const v = new Float32Array(EMB_DIM);
+    for (let d = 0; d < EMB_DIM; d++) v[d] = embed.Win[off + d] - embed.mean[d];
+    return v;
+  }
+
+  function sigmoid(x) { return 1 / (1 + Math.exp(-x)); }
+
+  async function trainEmbed(texts, opts = {}) {
+    const { pairs = 500000, lr0 = 0.04, onProgress } = opts;
+    // Kök akışı: durak kelimeler ve saf sayılar atılır (sürüm numaraları
+    // her bağlamda geçtiği için anlam uzayını kirletir)
+    const stream = [];
+    texts.forEach(t => stream.push(...tokenizeTr(t).filter(w => !/^\d+$/.test(w))));
+
+    const freq = new Map();
+    stream.forEach(w => freq.set(w, (freq.get(w) || 0) + 1));
+    const words = [...freq.entries()].filter(e => e[1] >= 2)
+      .sort((a, b) => b[1] - a[1]).slice(0, EMB_VOCAB).map(e => e[0]);
+    const vocab = new Map(words.map((w, i) => [w, i]));
+    const V = words.length;
+
+    // SIK KELİME ALT-ÖRNEKLEME (word2vec'in t parametresi): "destek",
+    // "chrome" gibi her yerde geçen şablon kelimeleri seyreltilir —
+    // yoksa tüm vektörler aynı yöne çöker
+    const subRand = rng(555);
+    const total = stream.length;
+    const T = 1e-3;
+    const data = [];
+    stream.forEach(w => {
+      const i = vocab.get(w);
+      if (i == null) return;
+      const f = freq.get(w) / total;
+      const keep = Math.min(1, Math.sqrt(T / f) + T / f);
+      if (subRand() < keep) data.push(i);
+    });
+
+    // Negatif örnekleme tablosu (frekans^0.75 dağılımı — word2vec standardı)
+    const negTable = new Int32Array(100000);
+    {
+      let total = 0;
+      const pw = words.map(w => Math.pow(freq.get(w), 0.75));
+      pw.forEach(p => total += p);
+      let idx = 0, acc = 0;
+      for (let i = 0; i < V; i++) {
+        acc += pw[i] / total;
+        while (idx < negTable.length && idx / negTable.length < acc) negTable[idx++] = i;
+      }
+      while (idx < negTable.length) negTable[idx++] = V - 1;
+    }
+
+    const rand = rng(31337);
+    const Win = randInit(V * EMB_DIM, 0.5 / EMB_DIM, rand);
+    const Wout = zeros(V * EMB_DIM);
+
+    embed.lossHistory = [];
+    let lossAcc = 0, lossN = 0;
+    const CHUNK = 8000;
+
+    for (let p = 0; p < pairs; p++) {
+      const lr = lr0 * (1 - p / pairs) + 0.002;
+      // rastgele merkez + pencere içi bağlam
+      const c = 1 + Math.floor(rand() * (data.length - 2));
+      const off = 1 + Math.floor(rand() * EMB_WINDOW);
+      const t = rand() < 0.5 ? c - off : c + off;
+      if (t < 0 || t >= data.length) continue;
+      const center = data[c], target = data[t];
+      const ci = center * EMB_DIM;
+
+      const gradIn = new Float32Array(EMB_DIM);
+      // 1 pozitif + EMB_NEG negatif örnek
+      for (let s = 0; s < EMB_NEG + 1; s++) {
+        const label = s === 0 ? 1 : 0;
+        const out = s === 0 ? target
+          : negTable[Math.floor(rand() * negTable.length)];
+        if (label === 0 && out === target) continue;
+        const oi = out * EMB_DIM;
+        let dot = 0;
+        for (let d = 0; d < EMB_DIM; d++) dot += Win[ci + d] * Wout[oi + d];
+        const pred = sigmoid(dot);
+        const g = (pred - label) * lr;         // gerçek gradyan (lojistik)
+        lossAcc += label === 1 ? -Math.log(Math.max(1e-9, pred))
+                               : -Math.log(Math.max(1e-9, 1 - pred));
+        lossN++;
+        for (let d = 0; d < EMB_DIM; d++) {
+          gradIn[d] += g * Wout[oi + d];
+          Wout[oi + d] -= g * Win[ci + d];
+        }
+      }
+      for (let d = 0; d < EMB_DIM; d++) Win[ci + d] -= gradIn[d];
+
+      if (p % CHUNK === 0 && p > 0) {
+        const L = lossAcc / Math.max(1, lossN);
+        embed.lossHistory.push({ step: p, loss: L });
+        lossAcc = 0; lossN = 0;
+        if (onProgress) onProgress(p, pairs, L);
+        await new Promise(r => setTimeout(r, 0));   // UI donmasın
+      }
+    }
+
+    embed.vocab = vocab;
+    embed.words = words;
+    embed.Win = Win;
+    embed.Wout = Wout;
+    embed.trainedPairs = pairs;
+    computeEmbedMean();
+    embed.ready = true;
+    return embed.lossHistory.at(-1);
+  }
+
+  // Metni öğrenilmiş vektörlerin ortalamasına göm (birim normlu)
+  function textVec(text) {
+    if (!embed.ready) return null;
+    const v = new Float32Array(EMB_DIM);
+    let n = 0;
+    tokenizeTr(text).forEach(w => {
+      const i = embed.vocab.get(w);
+      if (i == null) return;
+      const cv = centeredVec(i);
+      for (let d = 0; d < EMB_DIM; d++) v[d] += cv[d];
+      n++;
+    });
+    if (n === 0) return null;
+    let norm = 0;
+    for (let d = 0; d < EMB_DIM; d++) norm += v[d] * v[d];
+    norm = Math.sqrt(norm) || 1;
+    for (let d = 0; d < EMB_DIM; d++) v[d] /= norm;
+    return v;
+  }
+
+  function vecCos(a, b) {
+    let s = 0;
+    for (let d = 0; d < EMB_DIM; d++) s += a[d] * b[d];
+    return s;
+  }
+
+  // Bir kelimenin öğrenilmiş en yakın komşuları — modelin ne öğrendiğinin
+  // doğrudan kanıtı ("dizi" → array, eleman... gibi)
+  function nearestWords(word, k = 6) {
+    if (!embed.ready) return [];
+    const i = embed.vocab.get(tokenizeTr(word)[0] || "");
+    if (i == null) return [];
+    const q = centeredVec(i);
+    const qn = Math.sqrt(q.reduce((s, x) => s + x * x, 0)) || 1;
+    const out = [];
+    for (let j = 0; j < embed.words.length; j++) {
+      if (j === i) continue;
+      const w = centeredVec(j);
+      let dot = 0, wn = 0;
+      for (let d = 0; d < EMB_DIM; d++) { dot += q[d] * w[d]; wn += w[d] * w[d]; }
+      out.push([embed.words[j], dot / (qn * Math.sqrt(wn) || 1)]);
+    }
+    return out.sort((a, b) => b[1] - a[1]).slice(0, k)
+      .map(([w, s]) => ({ word: w, sim: Math.round(s * 100) / 100 }));
+  }
+
+  const EMBED_KEY = "vega_embed_v1";
+  function saveEmbed() {
+    if (!embed.ready) return false;
+    try {
+      localStorage.setItem(EMBED_KEY, JSON.stringify({
+        v: 1, dim: EMB_DIM, words: embed.words,
+        Win: f32ToB64(embed.Win),
+        trainedPairs: embed.trainedPairs, lossHistory: embed.lossHistory
+      }));
+      return true;
+    } catch (e) { return false; }
+  }
+  function loadEmbed() {
+    try {
+      const raw = localStorage.getItem(EMBED_KEY);
+      if (!raw) return false;
+      const d = JSON.parse(raw);
+      if (d.v !== 1 || d.dim !== EMB_DIM) return false;
+      embed.words = d.words;
+      embed.vocab = new Map(d.words.map((w, i) => [w, i]));
+      embed.Win = b64ToF32(d.Win);
+      embed.Wout = null;   // yalnız giriş vektörleri gerekir
+      embed.trainedPairs = d.trainedPairs || 0;
+      embed.lossHistory = d.lossHistory || [];
+      computeEmbedMean();
+      embed.ready = true;
+      return true;
+    } catch (e) { return false; }
+  }
+  function clearEmbed() { localStorage.removeItem(EMBED_KEY); embed.ready = false; }
+  function embedInfo() {
+    return {
+      ready: embed.ready,
+      vocab: embed.words ? embed.words.length : 0,
+      dim: EMB_DIM,
+      params: embed.words ? embed.words.length * EMB_DIM * (embed.Wout ? 2 : 1) : 0,
+      trainedPairs: embed.trainedPairs,
+      lossHistory: embed.lossHistory
+    };
+  }
+
+  /* ============================================================
      4) LYRA KİŞİLİKLERİ — uzmanlaşmış kelime dil modelleri
      Her Lyra bağımsız bir sinir ağıdır; kendi veri karışımı, kendi
      sözlüğü, kendi ağırlıkları vardır.
@@ -1107,5 +1331,7 @@ const VegaML = (() => {
            saveWordNet, loadWordNet, clearWordNet,
            saveCodeNet, loadCodeNet, clearCodeNet, info,
            trainLyra, generateLyra, loadLyra, clearLyra, lyraInfo,
+           trainEmbed, textVec, vecCos, nearestWords,
+           saveEmbed, loadEmbed, clearEmbed, embedInfo,
            _mlp: createMLP };   // testler için
 })();

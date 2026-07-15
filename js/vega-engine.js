@@ -532,6 +532,34 @@ const VegaEngine = (() => {
       });
       scored.sort((a, b) => b.score - a.score);
 
+      // NÖRAL ANLAMSAL YENİDEN SIRALAMA: öğrenilmiş word2vec vektörleri.
+      // Sorgu ve adaylar aynı anlam uzayına gömülür; anlamca yakın adaylar
+      // desteklenir. Eşanlamlılık artık elle liste değil, ÖĞRENİLMİŞ.
+      if (typeof VegaML !== "undefined" && VegaML.embedInfo &&
+          VegaML.embedInfo().ready && scored.length > 1) {
+        const qvec = VegaML.textVec(qtext);
+        if (qvec) {
+          if (!state.docVecs) state.docVecs = new Map();
+          const before = scored[0].doc.id;
+          const topN = Math.min(40, scored.length);
+          for (let i = 0; i < topN; i++) {
+            const d = scored[i].doc;
+            let dv = state.docVecs.get(d.id);
+            if (dv === undefined) {
+              dv = VegaML.textVec(d.title + " " + d.q);
+              state.docVecs.set(d.id, dv);
+            }
+            if (dv) {
+              scored[i].score *= 1 + 0.35 * Math.max(0, VegaML.vecCos(qvec, dv));
+            }
+          }
+          scored.sort((a, b) => b.score - a.score);
+          trace.push(scored[0].doc.id === before
+            ? `Nöral anlamsal katman (word2vec, ${topN} aday) sıralamayı doğruladı`
+            : `Nöral anlamsal katman sıralamayı DEĞİŞTİRDİ — yeni lider: "${scored[0].doc.title}"`);
+        }
+      }
+
       let coverage = 1;
       if (scored[0]) {
         const origTerms = [...new Set(tokenize(qtext).map(stem))];
