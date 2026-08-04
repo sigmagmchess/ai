@@ -405,6 +405,28 @@ const VegaEngine = (() => {
       };
     }
 
+    // Vega-XL: en büyük nöral dil modeli
+    const xlMatch = text.match(/^xl\s*:\s*(.+)$/i);
+    if (xlMatch) {
+      const ml = (typeof VegaML !== "undefined") ? VegaML : null;
+      const info = ml && ml.lyraInfo().xl;
+      if (!info || !info.ready) {
+        return {
+          type: "info",
+          text: "**Vega-XL** henüz eğitilmedi. **Admin > Lyra Kişilikleri > Vega-XL'i Eğit** butonuna bas — ~1 milyon parametre, tüm çok dilli derlemle eğitilir (~2-3 dk) ve IndexedDB'de kalıcı saklanır.",
+          docId: null
+        };
+      }
+      const prefix = xlMatch[1].trim();
+      const g = ml.generateLyra("xl", prefix, 44, 0.8, hashString("xl" + prefix));
+      return {
+        type: "code",
+        text: `**Vega-XL** (${info.params.toLocaleString("tr-TR")} parametre, ${(info.trainedWords / 1000).toFixed(0)}k kelimeyle eğitildi) üretti · **özgünlük %${Math.round(g.novelty * 100)}**:`,
+        code: g.text,
+        docId: null
+      };
+    }
+
     // Lyra kişilikleri: uzmanlaşmış nöral dil modelleri
     const lyraMatch = text.match(/^lyra\s*[- ]?\s*(1\.5|1)\s*:\s*(.+)$/is);
     if (lyraMatch) {

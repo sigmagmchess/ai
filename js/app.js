@@ -62,6 +62,23 @@ function lyraTexts(ver) {
     return texts;
   }
 
+  if (ver === "xl") {   // Vega-XL: TÜM veri — çok dilli derlem + bilgi tabanı
+    const base = cur.map(clean);
+    const texts = [...base, ...base];
+    if (typeof VEGA_WIKI !== "undefined") {
+      VEGA_WIKI.forEach(w => texts.push(w.body.replace(/[*`#>]/g, " ")));
+    }
+    if (typeof VEGA_BIG_CORPUS !== "undefined") {
+      const step = Math.max(1, Math.floor(VEGA_BIG_CORPUS.length / 40000));
+      for (let i = 0; i < VEGA_BIG_CORPUS.length && texts.length < base.length * 2 + 40000; i += step)
+        texts.push(VEGA_BIG_CORPUS[i]);
+    }
+    const refs = docs.filter(d => d.id.startsWith("ref-"));
+    for (let i = 0; i < refs.length && texts.length < base.length * 2 + 46000; i += 3)
+      texts.push(clean(refs[i]));
+    return texts;
+  }
+
   // 1.5: Sözcük & Kavram
   const cats1 = ["Matematik", "Algoritmalar", "JavaScript", "TypeScript",
                  "Python", "Go", "Rust", "Java", "Veri Yapıları"];
@@ -81,8 +98,10 @@ function lyraTexts(ver) {
 function renderLyraStats() {
   const info = VegaML.lyraInfo();
   const rows = [];
+  const NAMES = { "1": "Lyra-1 · Kod & Mat", "1.5": "Lyra-1.5 · Sözcük",
+                  "xl": "Vega-XL · Büyük Model" };
   for (const [ver, i] of Object.entries(info)) {
-    const name = ver === "1" ? "Lyra-1 · Kod & Mat" : "Lyra-1.5 · Sözcük";
+    const name = NAMES[ver] || ver;
     rows.push(`
       <div class="stat"><div class="val">${i.ready ? "hazır" : "—"}</div>
         <div class="lbl">${name}</div></div>
@@ -97,7 +116,7 @@ function renderLyraStats() {
 }
 
 async function trainLyraUI(ver) {
-  const btn = $(ver === "1" ? "#lyra1-btn" : "#lyra15-btn");
+  const btn = $({ "1": "#lyra1-btn", "1.5": "#lyra15-btn", "xl": "#xl-btn" }[ver]);
   btn.disabled = true;
   setStatus(`Lyra-${ver} eğitiliyor…`, true);
   const t0 = performance.now();
@@ -136,9 +155,19 @@ function initNeural() {
       [hadL1 && "Lyra-1", hadL15 && "Lyra-1.5"].filter(Boolean).join(" + ");
     $("#lyra-fill").style.width = "100%";
   }
+  // Vega-XL: IndexedDB'den asenkron yükleme
+  VegaML.loadXL(lyraTexts("xl")).then(ok => {
+    if (ok) {
+      $("#lyra-label").textContent += " · Vega-XL yüklendi (IndexedDB)";
+      renderLyraStats();
+      renderNeuralCard();
+    }
+  });
+
   renderLyraStats();
   $("#lyra1-btn").addEventListener("click", () => trainLyraUI("1"));
   $("#lyra15-btn").addEventListener("click", () => trainLyraUI("1.5"));
+  $("#xl-btn").addEventListener("click", () => trainLyraUI("xl"));
   $("#lyra-clear-btn").addEventListener("click", () => {
     VegaML.clearLyra();
     location.reload();
@@ -282,11 +311,16 @@ function renderNeuralCard() {
       <div class="lbl">Eğitim kelimesi / sözlük</div></div>`;
 
   const ei = VegaML.embedInfo();
+  const li = VegaML.lyraInfo();
+  const totalParams = (i.intentReady ? i.intentParams : 0) +
+    (i.codeReady ? i.codeParams : 0) + (i.wordReady ? i.wordParams : 0) +
+    (ei.ready ? ei.params : 0) +
+    Object.values(li).reduce((s, x) => s + (x.ready ? x.params : 0), 0);
   $("#nn-stats").innerHTML += `
     <div class="stat"><div class="val">${ei.ready ? ei.vocab.toLocaleString("tr-TR") + " kelime" : "—"}</div>
       <div class="lbl">Anlamsal ağ (word2vec) sözlüğü</div></div>
-    <div class="stat"><div class="val">${ei.ready ? (ei.trainedPairs / 1000).toFixed(0) + "k çift" : "—"}</div>
-      <div class="lbl">Skip-gram eğitim örneği</div></div>`;
+    <div class="stat"><div class="val">${totalParams.toLocaleString("tr-TR")}</div>
+      <div class="lbl">TOPLAM öğrenilen parametre</div></div>`;
   drawNeuralChart();
 }
 

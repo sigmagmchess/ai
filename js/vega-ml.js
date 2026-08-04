@@ -706,7 +706,7 @@ const VegaML = (() => {
      vektörler aramanın anlamsal yeniden sıralamasında kullanılır —
      elle yazılmış eşanlamlı listesinin nöral karşılığı.
      ============================================================ */
-  const EMB_DIM = 48, EMB_VOCAB = 3000, EMB_WINDOW = 3, EMB_NEG = 5;
+  const EMB_DIM = 64, EMB_VOCAB = 6000, EMB_WINDOW = 3, EMB_NEG = 5;
   const embed = {
     ready: false, vocab: null, words: null,
     Win: null, Wout: null, mean: null, trainedPairs: 0, lossHistory: []
@@ -735,7 +735,7 @@ const VegaML = (() => {
   function sigmoid(x) { return 1 / (1 + Math.exp(-x)); }
 
   async function trainEmbed(texts, opts = {}) {
-    const { pairs = 500000, lr0 = 0.04, onProgress } = opts;
+    const { pairs = 900000, lr0 = 0.04, onProgress } = opts;
     // Kök akışı: durak kelimeler ve saf sayılar atılır (sürüm numaraları
     // her bağlamda geçtiği için anlam uzayını kirletir)
     const stream = [];
@@ -935,13 +935,17 @@ const VegaML = (() => {
        (üretilen 3-kelime gruplarının eğitim verisinde birebir
        GEÇMEME oranı — ezber/üretim ayrımının dürüst ölçüsü).
      ============================================================ */
-  function createWordLM(name) {
+  function createWordLM(name, cfgIn = {}) {
     const S = {
       name, ready: false, words: null, wordIdx: null,
       emb: null, net: null, history: [], trainedWords: 0,
       cfg: null, trials: [],            // meta-öğrenme kayıtları
       tri: new Map(), bi: new Map(),    // harman + özgünlük istatistikleri
-      ctx: 6, embDim: 24
+      ctx: cfgIn.ctx ?? 6, embDim: cfgIn.embDim ?? 24,
+      batch: cfgIn.batch ?? 32,
+      fullSteps: cfgIn.steps ?? 650,
+      metaSteps: cfgIn.metaSteps ?? 130,
+      candOverride: cfgIn.candidates ?? null
     };
 
     function buildStats(stream) {
@@ -1012,13 +1016,14 @@ const VegaML = (() => {
       }
 
       const history = [];
+      const B = S.batch;
       let bestVal = Infinity, snap = null;
       for (let s = 1; s <= steps; s++) {
-        const { X, y, idxs } = makeBatch(trainData, 32, rand);
-        const { loss, dz1 } = net.trainStep(X, y, 32, hp.lr, dropout);
+        const { X, y, idxs } = makeBatch(trainData, B, rand);
+        const { loss, dz1 } = net.trainStep(X, y, B, hp.lr, dropout);
         // embedding geri yayılımı
         const dEmb = zeros(emb.length);
-        for (let b = 0; b < 32; b++) {
+        for (let b = 0; b < B; b++) {
           for (let c = 0; c < S.ctx; c++) {
             const wi = idxs[b * S.ctx + c];
             for (let e2 = 0; e2 < S.embDim; e2++) {
@@ -1060,7 +1065,7 @@ const VegaML = (() => {
       const stream = toStream(texts);
       buildStats(stream);
 
-      const candidates = [
+      const candidates = S.candOverride || [
         { lr: 0.006, hid: 72, vocab: 1000 },
         { lr: 0.012, hid: 72, vocab: 1000 },
         { lr: 0.006, hid: 96, vocab: 1000 },
@@ -1070,8 +1075,8 @@ const VegaML = (() => {
       for (let i = 0; i < candidates.length; i++) {
         const hp = candidates[i];
         if (onProgress) onProgress("meta", i + 1, candidates.length,
-          `deneme ${i + 1}/4: lr=${hp.lr} gizli=${hp.hid}`);
-        const r = await trainWith(stream, hp, 130, 0.15, null);
+          `deneme ${i + 1}/${candidates.length}: lr=${hp.lr} gizli=${hp.hid}`);
+        const r = await trainWith(stream, hp, S.metaSteps, 0.15, null);
         S.trials.push({ ...hp, val: Math.round(r.bestVal * 1000) / 1000 });
       }
       S.trials.sort((a, b) => a.val - b.val);
@@ -1079,7 +1084,7 @@ const VegaML = (() => {
       if (onProgress) onProgress("meta-secim", 4, 4,
         `kazanan: lr=${winner.lr} gizli=${winner.hid} (val ${winner.val})`);
 
-      const full = await trainWith(stream, winner, 650, 0.15,
+      const full = await trainWith(stream, winner, S.fullSteps, 0.15,
         (s, total, loss, vl) => {
           if (onProgress) onProgress("egitim", s, total,
             `tam eğitim ${s}/${total} · kayıp ${loss.toFixed(3)} · doğrulama ${vl.toFixed(3)}`);
@@ -1199,6 +1204,42 @@ const VegaML = (() => {
       } catch (e) { return false; }
     }
 
+    // Büyük modeller için IndexedDB kalıcılığı — localStorage'ın ~5 MB
+    // kotasına sığmayan ağırlıklar (typed array olarak, base64'süz) saklanır
+    async function saveBig(key) {
+      if (!S.ready) return false;
+      try {
+        await idbSet(key, {
+          v: 3, name: S.name, ctx: S.ctx, embDim: S.embDim,
+          hid: S.cfg.hid, cfgSel: S.cfg, trials: S.trials,
+          words: S.words, emb: S.emb,
+          W1: S.net.W1, b1: S.net.b1, W2: S.net.W2, b2: S.net.b2,
+          history: S.history, trainedWords: S.trainedWords
+        });
+        return true;
+      } catch (e) { return false; }
+    }
+
+    async function loadBig(key, texts) {
+      try {
+        const d = await idbGet(key);
+        if (!d || d.v !== 3 || d.ctx !== S.ctx || d.embDim !== S.embDim) return false;
+        const V = d.words.length;
+        S.words = d.words;
+        S.wordIdx = new Map(d.words.map((w, i) => [w, i]));
+        S.emb = d.emb;
+        S.net = createMLP(S.ctx * S.embDim, d.hid, V, 13);
+        S.net.W1.set(d.W1); S.net.b1.set(d.b1);
+        S.net.W2.set(d.W2); S.net.b2.set(d.b2);
+        S.history = d.history || [];
+        S.trainedWords = d.trainedWords || 0;
+        S.cfg = d.cfgSel; S.trials = d.trials || [];
+        if (texts) buildStats(toStream(texts));
+        S.ready = true;
+        return true;
+      } catch (e) { return false; }
+    }
+
     function infoShort() {
       return {
         ready: S.ready,
@@ -1211,22 +1252,62 @@ const VegaML = (() => {
       };
     }
 
-    return { metaTrain, generate: generateFrom, save, load,
+    return { metaTrain, generate: generateFrom, save, load, saveBig, loadBig,
              buildStats: texts => buildStats(toStream(texts)), info: infoShort };
   }
 
-  // Kişilik kayıtları
+  /* ---------- IndexedDB yardımcıları ---------- */
+  function idbOpen() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open("vega-models", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("m");
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  }
+  async function idbSet(k, v) {
+    const db = await idbOpen();
+    return new Promise((res, rej) => {
+      const tx = db.transaction("m", "readwrite");
+      tx.objectStore("m").put(v, k);
+      tx.oncomplete = () => { db.close(); res(true); };
+      tx.onerror = () => { db.close(); rej(tx.error); };
+    });
+  }
+  async function idbGet(k) {
+    const db = await idbOpen();
+    return new Promise((res, rej) => {
+      const tx = db.transaction("m", "readonly");
+      const rq = tx.objectStore("m").get(k);
+      rq.onsuccess = () => { db.close(); res(rq.result); };
+      rq.onerror = () => { db.close(); rej(rq.error); };
+    });
+  }
+
+  // Kişilik kayıtları — XL: en büyük model (~0.9M parametre), tüm çok
+  // dilli derlemle eğitilir, IndexedDB'de saklanır
   const lyra = {
     "1":   { lm: createWordLM("Lyra-1 · Kod & Matematik"), key: "vega_lyra_1" },
-    "1.5": { lm: createWordLM("Lyra-1.5 · Sözcük & Kavram"), key: "vega_lyra_15" }
+    "1.5": { lm: createWordLM("Lyra-1.5 · Sözcük & Kavram"), key: "vega_lyra_15" },
+    "xl":  { lm: createWordLM("Vega-XL · Büyük Model", {
+               ctx: 8, embDim: 40, batch: 24, steps: 420, metaSteps: 70,
+               candidates: [
+                 { lr: 0.006, hid: 192, vocab: 3500 },
+                 { lr: 0.012, hid: 192, vocab: 3500 }
+               ]
+             }), key: "vega_xl_v1", big: true }
   };
 
   async function trainLyra(ver, texts, opts) {
     const L = lyra[ver];
     if (!L) throw new Error("Bilinmeyen Lyra sürümü: " + ver);
     const res = await L.lm.metaTrain(texts, opts);
-    L.lm.save(L.key);
+    if (L.big) await L.lm.saveBig(L.key);
+    else L.lm.save(L.key);
     return res;
+  }
+  async function loadXL(texts) {
+    return lyra.xl.lm.loadBig(lyra.xl.key, texts);
   }
   function generateLyra(ver, prefix, maxWords, temp, seed) {
     const L = lyra[ver];
@@ -1238,7 +1319,10 @@ const VegaML = (() => {
     return L ? L.lm.load(L.key, texts) : false;
   }
   function clearLyra() {
-    Object.values(lyra).forEach(L => localStorage.removeItem(L.key));
+    Object.values(lyra).forEach(L => {
+      if (L.big) { idbSet(L.key, null).catch(() => {}); }
+      else localStorage.removeItem(L.key);
+    });
   }
   function lyraInfo() {
     const out = {};
@@ -1330,7 +1414,7 @@ const VegaML = (() => {
            trainWordNet, generateWords, buildWordStats,
            saveWordNet, loadWordNet, clearWordNet,
            saveCodeNet, loadCodeNet, clearCodeNet, info,
-           trainLyra, generateLyra, loadLyra, clearLyra, lyraInfo,
+           trainLyra, generateLyra, loadLyra, clearLyra, lyraInfo, loadXL,
            trainEmbed, textVec, vecCos, nearestWords,
            saveEmbed, loadEmbed, clearEmbed, embedInfo,
            _mlp: createMLP };   // testler için
